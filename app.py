@@ -12,7 +12,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 # PAGE CONFIG & MODERN EXECUTIVE STYLING
 # ==========================================
 st.set_page_config(
-    page_title="DCP Delivery & Division Billing Portal",
+    page_title="DCP Delivery Monitoring",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
