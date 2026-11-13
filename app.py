@@ -203,7 +203,7 @@ st.markdown(
 
 
 # ==========================================
-# CREDENTIALS & PASSWORD GATE (PRESERVED)
+# CREDENTIALS & PASSWORD GATE
 # ==========================================
 DEFAULT_SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
 DEFAULT_APP_PASSWORD = "!dcp2026*"
@@ -238,7 +238,7 @@ if APP_PASSWORD and not st.session_state["authenticated"]:
             """
             <div class="login-box">
                 <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🔐</div>
-                <div class="login-title">DepEd DCP Monitoring Portal</div>
+                <div class="login-title">DCP Monitoring Portal</div>
                 <div class="login-sub">Restricted Internal Dashboard • Enter authorized access password</div>
             </div>
             """,
@@ -409,7 +409,6 @@ def load_tables_from_gsheet(sheet_id: str) -> dict[str, pd.DataFrame]:
             for t, fut in futures.items():
                 results[t] = fut.result()
 
-        # Guard against gviz returning the first sheet when a tab name doesn't exist
         if "2025c" in results and "2026" in results and results["2025c"].equals(results["2026"]):
             del results["2026"]
         if "Raw_Delivery" in results:
@@ -418,7 +417,6 @@ def load_tables_from_gsheet(sheet_id: str) -> dict[str, pd.DataFrame]:
                 del results["Raw_Delivery"]
         return results
     except Exception:
-        # Fallback to full xlsx download if CSV endpoint is restricted
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
         resp = requests.get(url, timeout=30)
         resp.raise_for_status()
@@ -760,7 +758,7 @@ st.markdown(
     f"""
     <div class="hero-banner">
         <div>
-            <div class="hero-title"> DCP Delivery & Division Billing Monitoring </div>
+            <div class="hero-title">DCP Delivery & Division Billing Portal</div>
             <div class="hero-subtitle">{subtitle_html}{sim_note}</div>
         </div>
         <div class="hero-badge">{sec_badge}</div>
