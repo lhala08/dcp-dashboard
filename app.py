@@ -1383,7 +1383,7 @@ excel_bytes = build_styled_excel(reg_display, div_display, pkg_display, comp_dis
 st.markdown("<hr style='border:0; border-top:1px solid #e2e8f0; margin: 1.5rem 0 0.8rem 0;'>", unsafe_allow_html=True)
 dl_c1, dl_c2 = st.columns([3, 1])
 with dl_c1:
-    st.caption("Kasama sa Excel export ang **Regional Summary**, **Division Billing Status**, **Package Distribution**, at **Component Breakdown**.")
+    st.caption("Export xlxs **Regional Summary**, **Division Billing Status**, **Package Distribution**, at **Component Breakdown**.")
 with dl_c2:
     st.download_button(
         label="📥 Export Full Excel Report (.xlsx)",
