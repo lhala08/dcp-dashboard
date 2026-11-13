@@ -1,5 +1,7 @@
 import io
 import re
+from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import quote
 import requests
 import numpy as np
 import pandas as pd
@@ -39,7 +41,6 @@ st.markdown(
         padding-bottom: 2.5rem;
         max-width: 1480px;
     }
-    /* Force light styling on selectboxes, labels, and buttons even on dark-mode browsers */
     label[data-testid="stWidgetLabel"] p,
     .stSelectbox label,
     .stRadio label,
@@ -289,7 +290,7 @@ STAGE_COLORS = {
 
 
 # ==========================================
-# DATA LOADING & SDO NORMALIZATION
+# FAST PARALLEL DATA LOADING & NORMALIZATION
 # ==========================================
 def clean_series(s: pd.Series) -> pd.Series:
     return (
@@ -391,24 +392,53 @@ def standardize_tab(df_raw: pd.DataFrame, default_fund: str) -> pd.DataFrame:
     return df_std
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_workbook_from_gsheet(sheet_id: str) -> bytes:
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
-    resp = requests.get(url, timeout=30)
+def _fetch_gsheet_csv_tab(sheet_id: str, tab_name: str) -> pd.DataFrame:
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={quote(tab_name)}"
+    resp = requests.get(url, timeout=20)
     resp.raise_for_status()
-    return resp.content
+    return pd.read_csv(io.BytesIO(resp.content), dtype=str)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def process_data(excel_bytes: bytes) -> pd.DataFrame:
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_tables_from_gsheet(sheet_id: str) -> dict[str, pd.DataFrame]:
+    tabs = ["2025c", "2026", "Raw_Delivery"]
+    results = {}
+    try:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = {t: pool.submit(_fetch_gsheet_csv_tab, sheet_id, t) for t in tabs}
+            for t, fut in futures.items():
+                results[t] = fut.result()
+
+        # Guard against gviz returning the first sheet when a tab name doesn't exist
+        if "2025c" in results and "2026" in results and results["2025c"].equals(results["2026"]):
+            del results["2026"]
+        if "Raw_Delivery" in results:
+            r_cols = [str(c).lower() for c in results["Raw_Delivery"].columns]
+            if any("dcp package" in c or "unit cost" in c for c in r_cols):
+                del results["Raw_Delivery"]
+        return results
+    except Exception:
+        # Fallback to full xlsx download if CSV endpoint is restricted
+        url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        xl = pd.ExcelFile(io.BytesIO(resp.content), engine="openpyxl")
+        return {t: xl.parse(t, dtype=str) for t in tabs if t in xl.sheet_names}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def load_tables_from_excel(excel_bytes: bytes) -> dict[str, pd.DataFrame]:
     xl = pd.ExcelFile(io.BytesIO(excel_bytes), engine="openpyxl")
-    sheet_names = xl.sheet_names
+    return {t: xl.parse(t, dtype=str) for t in ["2025c", "2026", "Raw_Delivery"] if t in xl.sheet_names}
 
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def build_processed_df(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     frames = []
-    if "2025c" in sheet_names:
-        frames.append(standardize_tab(xl.parse("2025c", dtype=str), "2025 Cont"))
-    if "2026" in sheet_names:
-        frames.append(standardize_tab(xl.parse("2026", dtype=str), "GAA 2026"))
+    if "2025c" in tables:
+        frames.append(standardize_tab(tables["2025c"], "2025 Cont"))
+    if "2026" in tables:
+        frames.append(standardize_tab(tables["2026"], "GAA 2026"))
 
     if not frames:
         return pd.DataFrame()
@@ -419,8 +449,8 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
     raw_status_by_sid = {}
     raw_div_lookup = {}
 
-    if "Raw_Delivery" in sheet_names:
-        raw_df = xl.parse("Raw_Delivery", dtype=str)
+    if "Raw_Delivery" in tables:
+        raw_df = tables["Raw_Delivery"]
         raw_cols = list(raw_df.columns)
 
         site_col = find_col_by_keywords(raw_cols, ["site code", "school id", "school_id", "beis"])
@@ -647,7 +677,7 @@ with st.sidebar:
         index=0,
     )
 
-    excel_data = None
+    tables_data = None
     if source_mode == "Live Google Sheet":
         if st.button("🔄 Sync Latest Google Sheet", use_container_width=True, type="primary"):
             st.cache_data.clear()
@@ -655,15 +685,15 @@ with st.sidebar:
             st.session_state["dr_overrides"] = {}
             st.session_state["iar_overrides"] = {}
         try:
-            with st.spinner("Syncing live database..."):
-                excel_data = load_workbook_from_gsheet(SHEET_ID)
+            with st.spinner("Syncing database..."):
+                tables_data = load_tables_from_gsheet(SHEET_ID)
         except Exception as e:
             st.error("Unable to fetch Google Sheet. Check 'Anyone with the link > Viewer' permission.")
             st.caption(f"Details: {e}")
     else:
         uploaded = st.file_uploader("Upload DCP Monitoring File", type=["xlsx"])
         if uploaded is not None:
-            excel_data = uploaded.read()
+            tables_data = load_tables_from_excel(uploaded.read())
 
     if APP_PASSWORD:
         st.markdown("---")
@@ -675,11 +705,11 @@ with st.sidebar:
                 pass
             st.rerun()
 
-if excel_data is None:
+if not tables_data:
     st.info("👈 Open the top-left sidebar (`>`) to connect your Google Sheet or upload an Excel file.")
     st.stop()
 
-df_base = process_data(excel_data)
+df_base = build_processed_df(tables_data)
 if df_base.empty:
     st.warning("No valid records found in '2025c' or '2026'.")
     st.stop()
