@@ -11,10 +11,10 @@ from openpyxl.styles import Font, PatternFill, Alignment
 # PAGE CONFIG & MODERN EXECUTIVE STYLING
 # ==========================================
 st.set_page_config(
-    page_title="DCP Delivery Monitoring Portal",
+    page_title="DCP Delivery & Division Payment Portal",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -31,18 +31,41 @@ st.markdown(
     }
 
     .block-container {
-        padding-top: 1.3rem;
+        padding-top: 1.2rem;
         padding-bottom: 2.5rem;
-        max-width: 1440px;
+        max-width: 1480px;
+    }
+
+    /* Login Card */
+    .login-box {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-top: 5px solid #1e3a8a;
+        border-radius: 16px;
+        padding: 2rem 2rem 1.5rem 2rem;
+        box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
+        margin-top: 3rem;
+        text-align: center;
+    }
+    .login-title {
+        font-size: 1.35rem;
+        font-weight: 800;
+        color: #0f172a;
+        margin-bottom: 0.3rem;
+    }
+    .login-sub {
+        font-size: 0.86rem;
+        color: #64748b;
+        margin-bottom: 1.2rem;
     }
 
     /* Executive Hero Banner */
     .hero-banner {
         background: linear-gradient(120deg, #0f172a 0%, #1e3a8a 55%, #2563eb 100%);
-        padding: 1.6rem 2rem;
+        padding: 1.4rem 1.8rem;
         border-radius: 16px;
         color: #ffffff;
-        margin-bottom: 1.4rem;
+        margin-bottom: 1rem;
         box-shadow: 0 10px 25px -5px rgba(30, 58, 138, 0.25);
         display: flex;
         justify-content: space-between;
@@ -52,14 +75,14 @@ st.markdown(
     }
     .hero-title {
         margin: 0;
-        font-size: 1.75rem;
+        font-size: 1.65rem;
         font-weight: 800;
         letter-spacing: -0.02em;
         color: #ffffff;
     }
     .hero-subtitle {
-        margin: 0.35rem 0 0 0;
-        font-size: 0.9rem;
+        margin: 0.3rem 0 0 0;
+        font-size: 0.88rem;
         color: #bfdbfe;
         font-weight: 500;
     }
@@ -67,9 +90,9 @@ st.markdown(
         background: rgba(255, 255, 255, 0.14);
         border: 1px solid rgba(255, 255, 255, 0.25);
         backdrop-filter: blur(6px);
-        padding: 0.55rem 1rem;
+        padding: 0.5rem 0.95rem;
         border-radius: 999px;
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         font-weight: 600;
         color: #f8fafc;
     }
@@ -79,7 +102,7 @@ st.markdown(
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 14px;
-        padding: 1.1rem 1.2rem;
+        padding: 1rem 1.1rem;
         box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
         transition: transform 0.15s ease, box-shadow 0.15s ease;
         height: 100%;
@@ -92,46 +115,55 @@ st.markdown(
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.45rem;
+        margin-bottom: 0.4rem;
     }
     .kpi-label {
-        font-size: 0.76rem;
+        font-size: 0.72rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.04em;
         color: #64748b;
     }
     .kpi-pill {
-        font-size: 0.72rem;
+        font-size: 0.7rem;
         font-weight: 700;
-        padding: 0.18rem 0.55rem;
+        padding: 0.16rem 0.5rem;
         border-radius: 999px;
     }
     .kpi-number {
-        font-size: 1.75rem;
+        font-size: 1.6rem;
         font-weight: 800;
         color: #0f172a;
         line-height: 1.15;
         letter-spacing: -0.02em;
     }
     .kpi-foot {
-        font-size: 0.76rem;
+        font-size: 0.73rem;
         color: #94a3b8;
-        margin-top: 0.35rem;
+        margin-top: 0.3rem;
     }
 
-    /* Section Card Wrapper */
     .section-header {
-        font-size: 1.08rem;
+        font-size: 1.05rem;
         font-weight: 700;
         color: #0f172a;
-        margin: 0.4rem 0 0.75rem 0;
+        margin: 0.35rem 0 0.65rem 0;
         display: flex;
         align-items: center;
         gap: 0.45rem;
     }
 
-    /* Tabs Styling */
+    .click-hint {
+        font-size: 0.78rem;
+        color: #2563eb;
+        background: #eff6ff;
+        border: 1px solid #bfdbfe;
+        padding: 0.35rem 0.75rem;
+        border-radius: 8px;
+        margin-bottom: 0.75rem;
+        display: inline-block;
+    }
+
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         background-color: #e2e8f0;
@@ -140,9 +172,9 @@ st.markdown(
     }
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px;
-        padding: 8px 18px;
+        padding: 8px 16px;
         font-weight: 600;
-        font-size: 0.88rem;
+        font-size: 0.86rem;
         color: #475569;
     }
     .stTabs [aria-selected="true"] {
@@ -154,7 +186,49 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
+
+
+# ==========================================
+# SECRETS & OPTIONAL PASSWORD GATE
+# ==========================================
+def get_secret(key: str, default: str = "") -> str:
+    try:
+        return str(st.secrets.get(key, default))
+    except Exception:
+        return default
+
+
+DEFAULT_SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
+SHEET_ID = get_secret("SHEET_ID", DEFAULT_SHEET_ID)
+APP_PASSWORD = get_secret("APP_PASSWORD", "")
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if APP_PASSWORD and not st.session_state["authenticated"]:
+    _, center_col, _ = st.columns([1.2, 1.3, 1.2])
+    with center_col:
+        st.markdown(
+            """
+            <div class="login-box">
+                <div style="font-size: 2.2rem; margin-bottom: 0.4rem;">🔐</div>
+                <div class="login-title">DepEd DCP Monitoring Portal</div>
+                <div class="login-sub">Restricted Internal Dashboard • Enter authorized access password</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.form("login_form"):
+            pwd_input = st.text_input("Access Password", type="password", placeholder="Enter office password...")
+            submitted = st.form_submit_button("Unlock Dashboard", use_container_width=True, type="primary")
+            if submitted:
+                if pwd_input == APP_PASSWORD:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("Incorrect password. Please try again.")
+    st.stop()
+
 
 REGION_ORDER = {
     "1": 1, "2": 2, "3": 3, "4A": 4, "4B": 5, "MIMAROPA": 6,
@@ -201,25 +275,40 @@ def clean_series(s: pd.Series) -> pd.Series:
     )
 
 
+def find_col_by_keywords(columns, keywords) -> str:
+    for col in columns:
+        c_low = str(col).lower().strip()
+        if any(k in c_low for k in keywords):
+            return col
+    return ""
+
+
 def standardize_tab(df_raw: pd.DataFrame, default_fund: str) -> pd.DataFrame:
     df = df_raw.copy()
+    orig_cols = list(df.columns)
+
+    # Detect explicit Division column if present in the tab
+    div_col_name = find_col_by_keywords(orig_cols, ["division", "sdo"])
+    explicit_div = clean_series(df[div_col_name]) if div_col_name else pd.Series([""] * len(df))
+
     while df.shape[1] < 16:
         df[f"extra_{df.shape[1]}"] = ""
 
-    df = df.iloc[:, :16].copy()
-    df.columns = [
+    df_std = df.iloc[:, :16].copy()
+    df_std.columns = [
         "LOT", "Region", "DCP_Package", "No_of_Package", "School_ID",
         "Recipient_Office", "Component", "Units_Per_Package", "Unit_Cost",
         "Supplier", "DR_Date", "IAR_Date", "IAR_Docs", "Col_N_Status",
         "Status", "Fund_Source"
     ]
 
-    for col in df.columns:
-        df[col] = clean_series(df[col])
+    for col in df_std.columns:
+        df_std[col] = clean_series(df_std[col])
 
-    df["Fund_Clean"] = default_fund
-    df = df[df["DCP_Package"] != ""].copy()
-    return df
+    df_std["Explicit_Division"] = explicit_div.values
+    df_std["Fund_Clean"] = default_fund
+    df_std = df_std[df_std["DCP_Package"] != ""].copy()
+    return df_std
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -230,6 +319,7 @@ def load_workbook_from_gsheet(sheet_id: str) -> bytes:
     return resp.content
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def process_data(excel_bytes: bytes) -> pd.DataFrame:
     xl = pd.ExcelFile(io.BytesIO(excel_bytes), engine="openpyxl")
     sheet_names = xl.sheet_names
@@ -245,18 +335,37 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
 
     df = pd.concat(frames, ignore_index=True)
 
-    # Auto-read Raw_Delivery tab if present
-    raw_lookup = {}
+    # Auto-read Raw_Delivery tab for Status & Division mapping
+    raw_status_lookup = {}
+    raw_div_lookup = {}
     if "Raw_Delivery" in sheet_names:
         raw_df = xl.parse("Raw_Delivery", dtype=str)
-        if raw_df.shape[1] >= 7:
-            site_codes = clean_series(raw_df.iloc[:, 5])
-            cur_statuses = clean_series(raw_df.iloc[:, 6])
-            for sid, st_val in zip(site_codes, cur_statuses):
-                if sid and st_val:
-                    raw_lookup[sid] = st_val
+        raw_cols = list(raw_df.columns)
 
-    raw_mapped = df["School_ID"].map(raw_lookup).fillna("")
+        site_col = find_col_by_keywords(raw_cols, ["site code", "school id", "school_id", "beis"])
+        if not site_col and raw_df.shape[1] >= 6:
+            site_col = raw_cols[5]
+
+        stat_col = find_col_by_keywords(raw_cols, ["current status", "delivery status", "status"])
+        if not stat_col and raw_df.shape[1] >= 7:
+            stat_col = raw_cols[6]
+
+        raw_div_col = find_col_by_keywords(raw_cols, ["division", "sdo"])
+
+        if site_col:
+            site_codes = clean_series(raw_df[site_col])
+            if stat_col:
+                cur_statuses = clean_series(raw_df[stat_col])
+                for sid, st_val in zip(site_codes, cur_statuses):
+                    if sid and st_val:
+                        raw_status_lookup[sid] = st_val
+            if raw_div_col:
+                cur_divs = clean_series(raw_df[raw_div_col])
+                for sid, d_val in zip(site_codes, cur_divs):
+                    if sid and d_val:
+                        raw_div_lookup[sid] = d_val
+
+    raw_mapped = df["School_ID"].map(raw_status_lookup).fillna("")
     effective_raw_status = np.where(raw_mapped != "", raw_mapped, df["Col_N_Status"])
     eff_lower = pd.Series(effective_raw_status).str.lower().str.strip()
     orig_status_lower = df["Status"].str.lower().str.strip()
@@ -269,22 +378,35 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
     choices = ["Completed", "Delivered, Docs Pending", "Successful Rebid"]
     df["Delivery_Stage"] = np.select(conditions, choices, default="Ongoing Delivery")
 
-    df["Region_Clean"] = df["Region"].str.upper()
+    df["Region_Clean"] = df["Region"].str.upper().str.strip()
     df["Package_Lower"] = df["DCP_Package"].str.lower()
     df["Package_Display"] = df["Package_Lower"].map(PACKAGE_DISPLAY).fillna(df["DCP_Package"])
     df["Component_Lower"] = df["Component"].str.lower()
     df["Component_Display"] = df["Component_Lower"].map(COMPONENT_DISPLAY).fillna(df["Component"])
 
-    # Recipient Key (Region|Office for Laptop for Non-Teaching, School ID for others)
+    # Resolve Division (SDO) cleanly from Explicit Column -> Raw_Delivery -> Recipient_Office
+    raw_div_mapped = df["School_ID"].map(raw_div_lookup).fillna("")
+    div_resolved = np.where(
+        df["Explicit_Division"] != "",
+        df["Explicit_Division"],
+        np.where(
+            raw_div_mapped != "",
+            raw_div_mapped,
+            np.where(df["Recipient_Office"] != "", df["Recipient_Office"], "Unspecified Division"),
+        ),
+    )
+    df["Division_Clean"] = pd.Series(div_resolved).str.strip()
+
     is_nonteaching = df["Package_Lower"] == "laptop for non-teaching"
     office_key = df["Region_Clean"] + "|" + df["Recipient_Office"]
     df["Recipient_Key"] = np.where(
         is_nonteaching,
         np.where(df["Recipient_Office"] != "", office_key, np.where(df["School_ID"] != "", df["School_ID"], df["LOT"])),
-        np.where(df["School_ID"] != "", df["School_ID"], np.where(df["Recipient_Office"] != "", office_key, df["LOT"]))
+        np.where(df["School_ID"] != "", df["School_ID"], np.where(df["Recipient_Office"] != "", office_key, df["LOT"])),
     )
 
     df = df[df["Recipient_Key"] != ""].copy()
+    df["Row_ID"] = np.arange(len(df))
 
     df["Pkg_Count"] = pd.to_numeric(df["No_of_Package"].str.replace("[^0-9.-]", "", regex=True), errors="coerce").fillna(0)
     df["Units_Per_Pkg"] = pd.to_numeric(df["Units_Per_Package"].str.replace("[^0-9.-]", "", regex=True), errors="coerce").fillna(0)
@@ -312,10 +434,16 @@ def compute_remaining_packages(sub_df: pd.DataFrame, group_cols: list) -> pd.Ser
     return non_cart.add(cart, fill_value=0)
 
 
-def build_styled_excel(reg_display: pd.DataFrame, pkg_display: pd.DataFrame, comp_display: pd.DataFrame) -> bytes:
+def build_styled_excel(
+    reg_display: pd.DataFrame,
+    div_display: pd.DataFrame,
+    pkg_display: pd.DataFrame,
+    comp_display: pd.DataFrame,
+) -> bytes:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         reg_display.to_excel(writer, sheet_name="Regional_Summary", index=False)
+        div_display.to_excel(writer, sheet_name="Division_Payment_Status", index=False)
         pkg_display.to_excel(writer, sheet_name="Package_Distribution", index=False)
         if not comp_display.empty:
             comp_display.to_excel(writer, sheet_name="Component_Breakdown", index=False)
@@ -324,6 +452,7 @@ def build_styled_excel(reg_display: pd.DataFrame, pkg_display: pd.DataFrame, com
         header_font = Font(color="FFFFFF", bold=True, size=11)
         total_fill = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
         total_font = Font(bold=True, size=11)
+        ready_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
 
         for sheet_name in writer.sheets:
             ws = writer.sheets[sheet_name]
@@ -331,6 +460,12 @@ def build_styled_excel(reg_display: pd.DataFrame, pkg_display: pd.DataFrame, com
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal="center", vertical="center")
+
+            if sheet_name == "Division_Payment_Status":
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+                    if any("READY FOR PAYMENT" in str(c.value or "") for c in row):
+                        for c in row:
+                            c.fill = ready_fill
 
             last_row = ws.max_row
             if last_row > 1:
@@ -340,26 +475,50 @@ def build_styled_excel(reg_display: pd.DataFrame, pkg_display: pd.DataFrame, com
 
             for col in ws.columns:
                 max_len = max((len(str(cell.value or "")) for cell in col), default=10)
-                ws.column_dimensions[col[0].column_letter].width = min(max_len + 5, 38)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 5, 42)
 
     return output.getvalue()
 
 
 # ==========================================
-# SIDEBAR & FILTERS
+# SESSION STATE FOR INTERACTIVE FILTERING & EDITS
+# ==========================================
+for k, v in {
+    "sel_fund": "All",
+    "sel_region": "All",
+    "sel_division": "All",
+    "sel_package": "All",
+    "sel_stage": "All",
+    "stage_overrides": {},
+}.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+
+def reset_all_filters():
+    st.session_state["sel_fund"] = "All"
+    st.session_state["sel_region"] = "All"
+    st.session_state["sel_division"] = "All"
+    st.session_state["sel_package"] = "All"
+    st.session_state["sel_stage"] = "All"
+
+
+# ==========================================
+# SIDEBAR DATA CONNECTION
 # ==========================================
 with st.sidebar:
-    st.markdown("### 🎛️ Control Panel")
+    st.markdown("### 🎛️ Data Connection")
     source_mode = st.radio(
-        "Data Connection",
+        "Source Mode",
         ["Live Google Sheet", "Upload Excel (.xlsx)"],
         index=0,
     )
 
     excel_data = None
     if source_mode == "Live Google Sheet":
-        if st.button("🔄 Sync Latest Data", use_container_width=True, type="primary"):
+        if st.button("🔄 Sync Latest Google Sheet", use_container_width=True, type="primary"):
             st.cache_data.clear()
+            st.session_state["stage_overrides"] = {}
         try:
             with st.spinner("Syncing live database..."):
                 excel_data = load_workbook_from_gsheet(SHEET_ID)
@@ -372,70 +531,118 @@ with st.sidebar:
             excel_data = uploaded.read()
 
 if excel_data is None:
-    st.info("👈 Select a data source on the left sidebar to load the dashboard.")
+    st.info("👈 Open the top-left sidebar (`>`) and select a data source to load the dashboard.")
     st.stop()
 
-df = process_data(excel_data)
-if df.empty:
+df_base = process_data(excel_data)
+if df_base.empty:
     st.warning("No valid records found in '2025c' or '2026'.")
     st.stop()
 
-with st.sidebar:
-    st.markdown("---")
-    st.markdown("### 🔍 Report Filters")
-    fund_options = ["All"] + sorted(df["Fund_Clean"].unique().tolist())
-    sel_fund = st.selectbox("Fund Source", fund_options)
-
-    region_options = ["All"] + sorted(
-        df["Region_Clean"].unique().tolist(),
-        key=lambda r: REGION_ORDER.get(r, 999),
-    )
-    sel_region = st.selectbox("Region", region_options)
-
-    pkg_options = ["All"] + sorted(df["Package_Display"].unique().tolist())
-    sel_package = st.selectbox("DCP Package", pkg_options)
-
-    stage_options = ["All", "Completed", "Delivered, Docs Pending", "Ongoing Delivery", "Successful Rebid"]
-    sel_stage = st.selectbox("Delivery Status", stage_options)
-
-# Apply Filters
-filtered = df.copy()
-if sel_fund != "All":
-    filtered = filtered[filtered["Fund_Clean"] == sel_fund]
-if sel_region != "All":
-    filtered = filtered[filtered["Region_Clean"] == sel_region]
-if sel_package != "All":
-    filtered = filtered[filtered["Package_Display"] == sel_package]
-if sel_stage != "All":
-    filtered = filtered[filtered["Delivery_Stage"] == sel_stage]
+# Apply any interactive What-If status overrides made by the user in Tab 4
+df = df_base.copy()
+if st.session_state["stage_overrides"]:
+    override_series = df["Row_ID"].map(st.session_state["stage_overrides"])
+    df["Delivery_Stage"] = np.where(override_series.notna(), override_series, df["Delivery_Stage"])
 
 # ==========================================
 # EXECUTIVE HERO BANNER
 # ==========================================
+active_badges = []
+for label, key in [
+    ("Fund", "sel_fund"),
+    ("Region", "sel_region"),
+    ("Division", "sel_division"),
+    ("Package", "sel_package"),
+    ("Status", "sel_stage"),
+]:
+    if st.session_state[key] != "All":
+        active_badges.append(f"{label}: <b>{st.session_state[key]}</b>")
+
+subtitle_html = (
+    " &nbsp;•&nbsp; ".join(active_badges)
+    if active_badges
+    else "All Funds &nbsp;•&nbsp; All Regions &nbsp;•&nbsp; All Divisions &nbsp;•&nbsp; Click any chart bar/slice or slicer below to filter"
+)
+
+sim_note = (
+    f" &nbsp;|&nbsp; 🧪 {len(st.session_state['stage_overrides'])} simulated edit(s) active"
+    if st.session_state["stage_overrides"]
+    else ""
+)
+
 st.markdown(
     f"""
     <div class="hero-banner">
         <div>
-            <div class="hero-title">DepEd DCP Delivery Monitoring Portal</div>
-            <div class="hero-subtitle">
-                Fund: <b>{sel_fund}</b> &nbsp;•&nbsp; Region: <b>{sel_region}</b> &nbsp;•&nbsp; Package: <b>{sel_package}</b>
-            </div>
+            <div class="hero-title">DepEd DCP Delivery & Division Payment Portal</div>
+            <div class="hero-subtitle">{subtitle_html}{sim_note}</div>
         </div>
-        <div class="hero-badge">● Live Executive Report</div>
+        <div class="hero-badge">● Interactive Executive Report</div>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
+# ==========================================
+# INLINE INTERACTIVE SLICER BAR (GOOGLE SHEETS STYLE)
+# ==========================================
+fund_options = ["All"] + sorted(df["Fund_Clean"].unique().tolist())
+region_options = ["All"] + sorted(
+    df["Region_Clean"].unique().tolist(),
+    key=lambda r: REGION_ORDER.get(r, 999),
+)
+
+if st.session_state["sel_region"] != "All":
+    div_pool = df[df["Region_Clean"] == st.session_state["sel_region"]]["Division_Clean"].unique().tolist()
+else:
+    div_pool = df["Division_Clean"].unique().tolist()
+division_options = ["All"] + sorted(div_pool)
+
+if st.session_state["sel_division"] not in division_options:
+    st.session_state["sel_division"] = "All"
+
+pkg_options = ["All"] + sorted(df["Package_Display"].unique().tolist())
+stage_options = ["All", "Completed", "Delivered, Docs Pending", "Ongoing Delivery", "Successful Rebid"]
+
+s1, s2, s3, s4, s5, s6 = st.columns([1.1, 1.0, 1.45, 1.35, 1.25, 0.85])
+with s1:
+    st.selectbox("Fund Source", fund_options, key="sel_fund")
+with s2:
+    st.selectbox("Region", region_options, key="sel_region")
+with s3:
+    st.selectbox("Division (SDO)", division_options, key="sel_division")
+with s4:
+    st.selectbox("DCP Package", pkg_options, key="sel_package")
+with s5:
+    st.selectbox("Delivery Status", stage_options, key="sel_stage")
+with s6:
+    st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
+    st.button("🔄 Reset", on_click=reset_all_filters, use_container_width=True)
+
+# Apply Active Filters
+filtered = df.copy()
+if st.session_state["sel_fund"] != "All":
+    filtered = filtered[filtered["Fund_Clean"] == st.session_state["sel_fund"]]
+if st.session_state["sel_region"] != "All":
+    filtered = filtered[filtered["Region_Clean"] == st.session_state["sel_region"]]
+if st.session_state["sel_division"] != "All":
+    filtered = filtered[filtered["Division_Clean"] == st.session_state["sel_division"]]
+if st.session_state["sel_package"] != "All":
+    filtered = filtered[filtered["Package_Display"] == st.session_state["sel_package"]]
+if st.session_state["sel_stage"] != "All":
+    filtered = filtered[filtered["Delivery_Stage"] == st.session_state["sel_stage"]]
+
 if filtered.empty:
-    st.warning("No records match the selected filters.")
+    st.warning("No records match the selected filters. Click **🔄 Reset** above to clear filters.")
     st.stop()
 
 # ==========================================
-# KPI COMPUTATIONS (1 SCHOOL = 1 REGION)
+# KPI & DIVISION PAYMENT ELIGIBILITY COMPUTATIONS
 # ==========================================
 unique_rec = filtered.drop_duplicates(subset=["Fund_Clean", "Recipient_Key"], keep="last").copy()
 assigned_region_map = unique_rec.set_index(["Fund_Clean", "Recipient_Key"])["Region_Clean"]
+assigned_div_map = unique_rec.set_index(["Fund_Clean", "Recipient_Key"])["Division_Clean"]
 
 stage_priority = {"Completed": 4, "Delivered, Docs Pending": 3, "Ongoing Delivery": 2, "Successful Rebid": 1}
 filtered["Stage_Rank"] = filtered["Delivery_Stage"].map(stage_priority).fillna(0)
@@ -445,6 +652,69 @@ rec_stage = (
     .copy()
 )
 rec_stage["Region_Clean"] = rec_stage.set_index(["Fund_Clean", "Recipient_Key"]).index.map(assigned_region_map)
+rec_stage["Division_Clean"] = rec_stage.set_index(["Fund_Clean", "Recipient_Key"]).index.map(assigned_div_map)
+
+# Build Division Payment Eligibility Summary (evaluated across all status stages for selected Fund/Region/Package)
+div_eval_df = df.copy()
+if st.session_state["sel_fund"] != "All":
+    div_eval_df = div_eval_df[div_eval_df["Fund_Clean"] == st.session_state["sel_fund"]]
+if st.session_state["sel_region"] != "All":
+    div_eval_df = div_eval_df[div_eval_df["Region_Clean"] == st.session_state["sel_region"]]
+if st.session_state["sel_division"] != "All":
+    div_eval_df = div_eval_df[div_eval_df["Division_Clean"] == st.session_state["sel_division"]]
+if st.session_state["sel_package"] != "All":
+    div_eval_df = div_eval_df[div_eval_df["Package_Display"] == st.session_state["sel_package"]]
+
+div_eval_df["Stage_Rank"] = div_eval_df["Delivery_Stage"].map(stage_priority).fillna(0)
+div_rec_unique = (
+    div_eval_df.sort_values("Stage_Rank")
+    .drop_duplicates(subset=["Fund_Clean", "Recipient_Key"], keep="last")
+    .copy()
+)
+rem_by_div = compute_remaining_packages(div_eval_df, ["Region_Clean", "Division_Clean"])
+
+div_rows = []
+for (reg_d, div_name), grp in div_rec_unique.groupby(["Region_Clean", "Division_Clean"], sort=False):
+    tot_d = len(grp)
+    comp_d = int((grp["Delivery_Stage"] == "Completed").sum())
+    pend_d = int((grp["Delivery_Stage"] == "Delivered, Docs Pending").sum())
+    ong_d = int((grp["Delivery_Stage"] == "Ongoing Delivery").sum())
+    reb_d = int((grp["Delivery_Stage"] == "Successful Rebid").sum())
+
+    deliv_rate = ((comp_d + pend_d) / tot_d * 100) if tot_d > 0 else 0.0
+    comp_rate = (comp_d / tot_d * 100) if tot_d > 0 else 0.0
+
+    if tot_d > 0 and comp_d == tot_d:
+        pay_status = "✅ READY FOR PAYMENT"
+    elif tot_d > 0 and (comp_d + pend_d) == tot_d:
+        pay_status = "🟡 DELIVERED (PENDING MOV)"
+    else:
+        pay_status = "🔵 IN PROGRESS"
+
+    div_rows.append({
+        "Region": reg_d,
+        "Division (SDO)": div_name,
+        "Total Recipients": tot_d,
+        "Remaining Packages": int(rem_by_div.get((reg_d, div_name), 0)),
+        "Ongoing Delivery": ong_d,
+        "Successful Rebid": reb_d,
+        "Delivered, Docs Pending": pend_d,
+        "Completed": comp_d,
+        "Delivery Rate (%)": round(deliv_rate, 1),
+        "Completion Rate (%)": round(comp_rate, 1),
+        "Payment Claim Status": pay_status,
+    })
+
+div_df = pd.DataFrame(div_rows)
+if not div_df.empty:
+    div_df["_reg_ord"] = div_df["Region"].map(lambda r: REGION_ORDER.get(r, 999))
+    div_df = div_df.sort_values(
+        by=["Completion Rate (%)", "Delivery Rate (%)", "_reg_ord", "Division (SDO)"],
+        ascending=[False, False, True, True],
+    ).drop(columns=["_reg_ord"])
+
+divs_ready_cnt = int((div_df["Payment Claim Status"] == "✅ READY FOR PAYMENT").sum()) if not div_df.empty else 0
+divs_total_cnt = len(div_df)
 
 total_recipients = len(unique_rec)
 total_rem_pkgs = int(compute_remaining_packages(filtered, ["Fund_Clean"]).sum())
@@ -458,15 +728,16 @@ pct_delivered = (cnt_delivered_total / total_recipients * 100) if total_recipien
 pct_completed = (cnt_completed / total_recipients * 100) if total_recipients > 0 else 0.0
 pct_ongoing = (cnt_ongoing / total_recipients * 100) if total_recipients > 0 else 0.0
 
-# Render 6 Modern KPI Cards
-cols = st.columns(6)
+# Render 7 Modern KPI Cards (including Divisions Ready for Payment)
+cols = st.columns(7)
 kpi_specs = [
-    ("Total Recipients", f"{total_recipients:,}", "100%", "#eff6ff", "#1d4ed8", "Unique schools & offices"),
+    ("Total Recipients", f"{total_recipients:,}", "100%", "#eff6ff", "#1d4ed8", "Unique schools/offices"),
     ("Remaining Pkgs", f"{total_rem_pkgs:,}", "Pending", "#f0f9ff", "#0284c7", "Undelivered packages"),
     ("Ongoing Delivery", f"{cnt_ongoing:,}", f"{pct_ongoing:.1f}%", "#eff6ff", "#2563eb", "Awarded / in transit"),
     ("Successful Rebid", f"{cnt_rebid:,}", "Rebid", "#f5f3ff", "#7c3aed", "Rebid allocation"),
     ("Docs Pending", f"{cnt_pending_docs:,}", f"{pct_delivered:.1f}% Deliv.", "#fff7ed", "#ea580c", "Delivered / Pending MOV"),
     ("Fully Completed", f"{cnt_completed:,}", f"{pct_completed:.1f}%", "#ecfdf5", "#059669", "100% MOV & IAR done"),
+    ("Divisions Billable", f"{divs_ready_cnt:,} / {divs_total_cnt:,}", "100% Done", "#dcfce7", "#15803d", "Ready for payment claim"),
 ]
 
 for col, (label, val, badge, bg_badge, fg_badge, foot) in zip(cols, kpi_specs):
@@ -485,10 +756,10 @@ for col, (label, val, badge, bg_badge, fg_badge, foot) in zip(cols, kpi_specs):
             unsafe_allow_html=True,
         )
 
-st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height: 0.9rem;'></div>", unsafe_allow_html=True)
 
 # ==========================================
-# PREPARE SUMMARY DATAFRAMES
+# PREPARE REGIONAL, PACKAGE & COMPONENT TABLES
 # ==========================================
 regions_present = sorted(
     unique_rec["Region_Clean"].unique().tolist(),
@@ -502,17 +773,19 @@ for reg in regions_present:
     tot_r = int((unique_rec["Region_Clean"] == reg).sum())
     comp_r = int((r_sub["Delivery_Stage"] == "Completed").sum())
     pend_r = int((r_sub["Delivery_Stage"] == "Delivered, Docs Pending").sum())
-    comp_rate = ((comp_r + pend_r) / tot_r * 100) if tot_r > 0 else 0.0
+    deliv_rate = ((comp_r + pend_r) / tot_r * 100) if tot_r > 0 else 0.0
+    comp_rate = (comp_r / tot_r * 100) if tot_r > 0 else 0.0
 
     reg_rows.append({
-        "Region": reg,
+        "Region": str(reg),
         "Recipient Schools": tot_r,
         "Remaining Packages": int(rem_by_reg.get(reg, 0)),
         "Ongoing Delivery": int((r_sub["Delivery_Stage"] == "Ongoing Delivery").sum()),
         "Successful Rebid": int((r_sub["Delivery_Stage"] == "Successful Rebid").sum()),
         "Delivered, Docs Pending": pend_r,
         "Completed": comp_r,
-        "Delivery Rate (%)": round(comp_rate, 1),
+        "Delivery Rate (%)": round(deliv_rate, 1),
+        "Completion Rate (%)": round(comp_rate, 1),
     })
 
 reg_df = pd.DataFrame(reg_rows)
@@ -525,10 +798,28 @@ reg_total = pd.DataFrame([{
     "Delivered, Docs Pending": reg_df["Delivered, Docs Pending"].sum(),
     "Completed": reg_df["Completed"].sum(),
     "Delivery Rate (%)": round(pct_delivered, 1),
+    "Completion Rate (%)": round(pct_completed, 1),
 }])
 reg_display = pd.concat([reg_df, reg_total], ignore_index=True)
 
-# Package Distribution DF
+if not div_df.empty:
+    div_total = pd.DataFrame([{
+        "Region": "TOTAL",
+        "Division (SDO)": f"{divs_ready_cnt} of {divs_total_cnt} Divisions Ready",
+        "Total Recipients": div_df["Total Recipients"].sum(),
+        "Remaining Packages": div_df["Remaining Packages"].sum(),
+        "Ongoing Delivery": div_df["Ongoing Delivery"].sum(),
+        "Successful Rebid": div_df["Successful Rebid"].sum(),
+        "Delivered, Docs Pending": div_df["Delivered, Docs Pending"].sum(),
+        "Completed": div_df["Completed"].sum(),
+        "Delivery Rate (%)": round((div_df["Completed"].sum() + div_df["Delivered, Docs Pending"].sum()) / div_df["Total Recipients"].sum() * 100, 1) if div_df["Total Recipients"].sum() > 0 else 0.0,
+        "Completion Rate (%)": round(div_df["Completed"].sum() / div_df["Total Recipients"].sum() * 100, 1) if div_df["Total Recipients"].sum() > 0 else 0.0,
+        "Payment Claim Status": f"{divs_ready_cnt} READY",
+    }])
+    div_display = pd.concat([div_df, div_total], ignore_index=True)
+else:
+    div_display = pd.DataFrame()
+
 rem_by_pkg = compute_remaining_packages(filtered, ["Package_Display"])
 pkg_rows = []
 for pkg in sorted(filtered["Package_Display"].unique()):
@@ -556,7 +847,6 @@ pkg_total = pd.DataFrame([{
 }])
 pkg_display = pd.concat([pkg_df, pkg_total], ignore_index=True)
 
-# Component Breakdown DF
 comp_valid = filtered[filtered["Component_Display"] != ""]
 comp_rows = []
 for comp in sorted(comp_valid["Component_Display"].unique()):
@@ -590,16 +880,21 @@ else:
     comp_display = pd.DataFrame()
 
 # ==========================================
-# MODERN INTERACTIVE TABS
+# INTERACTIVE TABS
 # ==========================================
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Executive Visuals",
-    "🗺️ Regional Monitoring Table",
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📊 Executive Visuals (Clickable)",
+    "💰 Division & Payment Claim",
+    "🗺️ Regional Table",
     "📦 Packages & Components",
-    "🔎 School / Office Lookup",
+    "🔎 Lookup & What-If Simulator",
 ])
 
 with tab1:
+    st.markdown(
+        '<div class="click-hint">💡 <b>Tip:</b> I-click ang kahit anong bar sa Region chart o slice sa Donut chart para mag-filter ang buong dashboard.</div>',
+        unsafe_allow_html=True,
+    )
     c_left, c_right = st.columns([1.45, 1])
 
     with c_left:
@@ -610,6 +905,7 @@ with tab1:
             var_name="Stage",
             value_name="Recipients",
         )
+        chart_melt["Region"] = chart_melt["Region"].astype(str)
         fig_bar = px.bar(
             chart_melt,
             x="Region",
@@ -617,18 +913,28 @@ with tab1:
             color="Stage",
             barmode="stack",
             color_discrete_map=STAGE_COLORS,
+            category_orders={"Region": [str(r) for r in regions_present]},
             height=390,
         )
+        fig_bar.update_xaxes(type="category", title="", showgrid=False)
         fig_bar.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=10, r=10, t=15, b=10),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, title_text=""),
-            xaxis=dict(title="", showgrid=False),
             yaxis=dict(title="Recipients", gridcolor="#e2e8f0"),
-            hovermode="x unified",
+            clickmode="event+select",
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        reg_event = st.plotly_chart(fig_bar, use_container_width=True, on_select="rerun", key="chart_reg_bar")
+        try:
+            pts = (reg_event or {}).get("selection", {}).get("points", [])
+            if pts:
+                clicked_reg = str(pts[0].get("x", ""))
+                if clicked_reg and clicked_reg in region_options and st.session_state["sel_region"] != clicked_reg:
+                    st.session_state["sel_region"] = clicked_reg
+                    st.rerun()
+        except Exception:
+            pass
 
     with c_right:
         st.markdown('<div class="section-header">🍩 Overall Delivery Status Share</div>', unsafe_allow_html=True)
@@ -662,15 +968,25 @@ with tab1:
                 )
             ],
         )
-        st.plotly_chart(fig_donut, use_container_width=True)
+        donut_event = st.plotly_chart(fig_donut, use_container_width=True, on_select="rerun", key="chart_donut")
+        try:
+            d_pts = (donut_event or {}).get("selection", {}).get("points", [])
+            if d_pts:
+                clicked_stage = str(d_pts[0].get("label", ""))
+                if clicked_stage and clicked_stage in stage_options and st.session_state["sel_stage"] != clicked_stage:
+                    st.session_state["sel_stage"] = clicked_stage
+                    st.rerun()
+        except Exception:
+            pass
 
     st.markdown("<hr style='border:0; border-top:1px solid #e2e8f0; margin: 1rem 0;'>", unsafe_allow_html=True)
 
     c_bot1, c_bot2 = st.columns([1.2, 1])
 
     with c_bot1:
-        st.markdown('<div class="section-header">📈 Delivery Completion Rate (%) per Region</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">📈 Delivery Rate (%) per Region</div>', unsafe_allow_html=True)
         rate_sorted = reg_df.sort_values("Delivery Rate (%)", ascending=True)
+        rate_sorted["Region"] = rate_sorted["Region"].astype(str)
         fig_rate = px.bar(
             rate_sorted,
             x="Delivery Rate (%)",
@@ -679,9 +995,10 @@ with tab1:
             text="Delivery Rate (%)",
             color="Delivery Rate (%)",
             color_continuous_scale=["#93c5fd", "#2563eb", "#10b981"],
-            range_x=[0, 112],
-            height=max(360, len(rate_sorted) * 26),
+            range_x=[0, 114],
+            height=max(380, len(rate_sorted) * 26),
         )
+        fig_rate.update_yaxes(type="category", title="")
         fig_rate.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
         fig_rate.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
@@ -689,7 +1006,6 @@ with tab1:
             coloraxis_showscale=False,
             margin=dict(l=10, r=20, t=10, b=10),
             xaxis=dict(title="Delivered + Completed (%)", gridcolor="#e2e8f0"),
-            yaxis=dict(title=""),
         )
         st.plotly_chart(fig_rate, use_container_width=True)
 
@@ -703,19 +1019,89 @@ with tab1:
             orientation="h",
             text="Remaining Packages",
             color_discrete_sequence=["#1d4ed8"],
-            height=max(360, len(rate_sorted) * 26),
+            height=max(380, len(rate_sorted) * 26),
         )
         fig_pkg.update_traces(texttemplate="%{text:,}", textposition="outside")
         fig_pkg.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=10, r=40, t=10, b=10),
+            margin=dict(l=10, r=45, t=10, b=10),
             xaxis=dict(title="Remaining Packages", gridcolor="#e2e8f0"),
             yaxis=dict(title=""),
         )
         st.plotly_chart(fig_pkg, use_container_width=True)
 
 with tab2:
+    st.markdown('<div class="section-header">💰 Division (SDO) Completion & Payment Claim Eligibility</div>', unsafe_allow_html=True)
+    st.caption("Kapag 100% Completed na ang lahat ng schools/offices sa isang Division, awtomatikong minamarkahan ito bilang **✅ READY FOR PAYMENT**.")
+
+    f_col1, f_col2 = st.columns([1.5, 2.5])
+    with f_col1:
+        pay_filter = st.radio(
+            "Filter Payment Claim Status",
+            ["All Divisions", "✅ READY FOR PAYMENT", "🟡 DELIVERED (PENDING MOV)", "🔵 IN PROGRESS"],
+            horizontal=False,
+        )
+
+    div_view = div_display.copy()
+    if not div_view.empty and pay_filter != "All Divisions":
+        div_view = div_view[div_view["Payment Claim Status"] == pay_filter]
+
+    if not div_view.empty:
+        # Top 20 Divisions Completion Chart
+        chart_div_src = div_df.copy()
+        if pay_filter != "All Divisions":
+            chart_div_src = chart_div_src[chart_div_src["Payment Claim Status"] == pay_filter]
+        top_divs = chart_div_src.head(20).iloc[::-1]
+
+        if not top_divs.empty:
+            top_divs["Div_Label"] = top_divs["Region"] + " - " + top_divs["Division (SDO)"]
+            fig_div = px.bar(
+                top_divs,
+                x="Completion Rate (%)",
+                y="Div_Label",
+                orientation="h",
+                text="Completion Rate (%)",
+                color="Payment Claim Status",
+                color_discrete_map={
+                    "✅ READY FOR PAYMENT": "#10b981",
+                    "🟡 DELIVERED (PENDING MOV)": "#f97316",
+                    "🔵 IN PROGRESS": "#3b82f6",
+                },
+                range_x=[0, 114],
+                height=max(320, len(top_divs) * 28),
+                title="Top Divisions by 100% Completion Rate (Basis for Payment Claim)",
+            )
+            fig_div.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+            fig_div.update_layout(
+                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=10, r=25, t=40, b=10),
+                xaxis=dict(title="Completion Rate (%)", gridcolor="#e2e8f0"),
+                yaxis=dict(title=""),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, title_text=""),
+            )
+            st.plotly_chart(fig_div, use_container_width=True)
+
+        st.dataframe(
+            div_view.style.format({
+                "Total Recipients": "{:,.0f}",
+                "Remaining Packages": "{:,.0f}",
+                "Ongoing Delivery": "{:,.0f}",
+                "Successful Rebid": "{:,.0f}",
+                "Delivered, Docs Pending": "{:,.0f}",
+                "Completed": "{:,.0f}",
+                "Delivery Rate (%)": "{:.1f}%",
+                "Completion Rate (%)": "{:.1f}%",
+            }),
+            use_container_width=True,
+            hide_index=True,
+            height=600,
+        )
+    else:
+        st.info("No divisions match the selected payment status filter.")
+
+with tab3:
     st.markdown('<div class="section-header">🗺️ Regional Delivery Monitoring Breakdown</div>', unsafe_allow_html=True)
     st.dataframe(
         reg_display.style.format({
@@ -726,13 +1112,14 @@ with tab2:
             "Delivered, Docs Pending": "{:,.0f}",
             "Completed": "{:,.0f}",
             "Delivery Rate (%)": "{:.1f}%",
+            "Completion Rate (%)": "{:.1f}%",
         }),
         use_container_width=True,
         hide_index=True,
         height=680,
     )
 
-with tab3:
+with tab4:
     st.markdown('<div class="section-header">📦 DCP Package Distribution</div>', unsafe_allow_html=True)
     st.dataframe(
         pkg_display.style.format({
@@ -758,36 +1145,85 @@ with tab3:
             hide_index=True,
         )
 
-with tab4:
-    st.markdown('<div class="section-header">🔎 Search Recipient School ID, Office, or Supplier</div>', unsafe_allow_html=True)
-    search_q = st.text_input("Type School ID, Recipient Office, LOT, or Supplier...", placeholder="e.g. 502655 or Columbia Technologies")
+with tab5:
+    st.markdown('<div class="section-header">🔎 School / Division Lookup & Live Status Simulator</div>', unsafe_allow_html=True)
+    st.caption(
+        "Puwede mong i-edit ang **Status** column sa table sa ibaba para i-simulate kung anong Division ang magiging **Ready for Payment**. "
+        "Lahat ng charts at Excel export ay awtomatikong mag-u-update."
+    )
+
+    s_left, s_right = st.columns([3, 1])
+    with s_left:
+        search_q = st.text_input(
+            "Search School ID, Division, Recipient Office, LOT, or Supplier",
+            placeholder="e.g. 502655, Pasig, Batangas, or Columbia Technologies...",
+        )
+    with s_right:
+        st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
+        if st.button("↩️ Reset Simulated Edits", use_container_width=True):
+            st.session_state["stage_overrides"] = {}
+            st.rerun()
+
     lookup_cols = [
-        "Fund_Clean", "LOT", "Region_Clean", "School_ID", "Recipient_Office",
-        "Package_Display", "Component_Display", "Pkg_Count", "Supplier", "Delivery_Stage"
+        "Row_ID", "Fund_Clean", "LOT", "Region_Clean", "Division_Clean", "School_ID",
+        "Recipient_Office", "Package_Display", "Component_Display", "Pkg_Count", "Supplier", "Delivery_Stage"
     ]
     lookup_df = filtered[lookup_cols].copy()
     lookup_df.columns = [
-        "Fund", "LOT", "Region", "School ID", "Recipient Office",
-        "DCP Package", "Component", "Packages", "Supplier", "Status"
+        "Row_ID", "Fund", "LOT", "Region", "Division", "School ID",
+        "Recipient Office", "DCP Package", "Component", "Packages", "Supplier", "Status"
     ]
     if search_q.strip():
         q = search_q.strip().lower()
-        mask = lookup_df.apply(lambda col: col.astype(str).str.lower().str.contains(q, na=False)).any(axis=1)
+        mask = lookup_df.drop(columns=["Row_ID"]).apply(
+            lambda col: col.astype(str).str.lower().str.contains(q, na=False)
+        ).any(axis=1)
         lookup_df = lookup_df[mask]
 
-    st.caption(f"Showing {len(lookup_df):,} records")
-    st.dataframe(lookup_df.head(1000), use_container_width=True, hide_index=True, height=520)
+    st.caption(f"Showing {len(lookup_df):,} records (double-click any Status cell to edit)")
+    edited_df = st.data_editor(
+        lookup_df.head(500),
+        use_container_width=True,
+        hide_index=True,
+        height=520,
+        disabled=["Row_ID", "Fund", "LOT", "Region", "Division", "School ID", "Recipient Office", "DCP Package", "Component", "Packages", "Supplier"],
+        column_config={
+            "Row_ID": None,
+            "Status": st.column_config.SelectboxColumn(
+                "Status (Editable)",
+                options=["Completed", "Delivered, Docs Pending", "Ongoing Delivery", "Successful Rebid"],
+                required=True,
+            ),
+        },
+        key="school_status_editor",
+    )
+
+    # Detect changes in Status and apply to session overrides
+    orig_map = dict(zip(lookup_df.head(500)["Row_ID"], lookup_df.head(500)["Status"]))
+    new_map = dict(zip(edited_df["Row_ID"], edited_df["Status"]))
+    changed = False
+    for rid, new_st in new_map.items():
+        if orig_map.get(rid) != new_st:
+            st.session_state["stage_overrides"][rid] = new_st
+            changed = True
+    if changed:
+        st.rerun()
 
 # ==========================================
-# SIDEBAR DOWNLOAD REPORT BUTTON
+# EXPORT BAR & SIDEBAR DOWNLOAD
 # ==========================================
-with st.sidebar:
-    st.markdown("---")
-    excel_bytes = build_styled_excel(reg_display, pkg_display, comp_display)
+excel_bytes = build_styled_excel(reg_display, div_display, pkg_display, comp_display)
+
+st.markdown("<hr style='border:0; border-top:1px solid #e2e8f0; margin: 1.5rem 0 0.8rem 0;'>", unsafe_allow_html=True)
+dl_c1, dl_c2 = st.columns([3, 1])
+with dl_c1:
+    st.caption("Kasama sa Excel export ang **Regional Summary**, **Division Payment Status**, **Package Distribution**, at **Component Breakdown**.")
+with dl_c2:
     st.download_button(
-        label="📥 Export Executive Excel (.xlsx)",
+        label="📥 Export Full Excel Report (.xlsx)",
         data=excel_bytes,
-        file_name=f"DCP_Executive_Report_{sel_fund}_{sel_region}.xlsx".replace(" ", "_"),
+        file_name=f"DCP_Executive_Payment_Report_{st.session_state['sel_fund']}_{st.session_state['sel_region']}.xlsx".replace(" ", "_"),
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
+        type="primary",
     )
