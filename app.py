@@ -692,7 +692,7 @@ st.markdown(
     f"""
     <div class="hero-banner">
         <div>
-            <div class="hero-title">DepEd DCP Delivery & Division Billing Portal</div>
+            <div class="hero-title">DepEd DCP Delivery an &</div>
             <div class="hero-subtitle">{subtitle_html}{sim_note}</div>
         </div>
         <div class="hero-badge">{sec_badge}</div>
