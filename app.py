@@ -420,7 +420,6 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
                 for sid, lot_v, st_val in zip(site_codes, lot_vals, cur_statuses):
                     if sid and st_val:
                         new_p = raw_status_priority(st_val)
-                        # Keep highest status priority so Completed is never overwritten by For Delivery
                         if new_p >= raw_status_priority(raw_status_by_sid.get(sid, "")):
                             raw_status_by_sid[sid] = st_val
                         if lot_v:
@@ -486,14 +485,13 @@ def classify_delivery_stages(df_in: pd.DataFrame) -> pd.DataFrame:
     df = df_in.copy()
     df["Has_DR"] = has_valid_entry(df["DR_Date"])
     df["Has_IAR"] = has_valid_entry(df["IAR_Date"])
-    df["Has_IAR_Docs"] = has_valid_entry(df["IAR_Docs"])
 
     eff_lower = df["Effective_Raw_Status"].str.lower().str.strip()
     orig_status_lower = df["Status"].str.lower().str.strip()
 
     # Completed in TRACES = Delivered AND submitted validated docs (Ready for Billing)
     is_completed = (
-        (df["Has_IAR"] & df["Has_IAR_Docs"])
+        (df["Has_DR"] & df["Has_IAR"])
         | eff_lower.str.contains("complete", regex=False, na=False)
         | orig_status_lower.str.contains("complete", regex=False, na=False)
     )
@@ -605,7 +603,6 @@ for k, v in {
     "stage_overrides": {},
     "dr_overrides": {},
     "iar_overrides": {},
-    "docs_overrides": {},
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -637,7 +634,6 @@ with st.sidebar:
             st.session_state["stage_overrides"] = {}
             st.session_state["dr_overrides"] = {}
             st.session_state["iar_overrides"] = {}
-            st.session_state["docs_overrides"] = {}
         try:
             with st.spinner("Syncing live database..."):
                 excel_data = load_workbook_from_gsheet(SHEET_ID)
@@ -675,9 +671,6 @@ if st.session_state["dr_overrides"]:
 if st.session_state["iar_overrides"]:
     iar_ov = df["Row_ID"].map(st.session_state["iar_overrides"])
     df["IAR_Date"] = np.where(iar_ov.notna(), iar_ov, df["IAR_Date"])
-if st.session_state["docs_overrides"]:
-    docs_ov = df["Row_ID"].map(st.session_state["docs_overrides"])
-    df["IAR_Docs"] = np.where(docs_ov.notna(), docs_ov, df["IAR_Docs"])
 
 df = classify_delivery_stages(df)
 
@@ -709,7 +702,6 @@ total_sim_edits = (
     len(st.session_state["stage_overrides"])
     + len(st.session_state["dr_overrides"])
     + len(st.session_state["iar_overrides"])
-    + len(st.session_state["docs_overrides"])
 )
 sim_note = f" &nbsp;|&nbsp; 🧪 {total_sim_edits} simulated edit(s) active" if total_sim_edits else ""
 sec_badge = "🔒 Secured & Protected" if APP_PASSWORD else "● Executive Monitoring"
@@ -816,7 +808,6 @@ div_eval_df["Stage_Rank"] = div_eval_df["Delivery_Stage"].map(stage_priority).fi
 
 dr_by_rec = div_eval_df.groupby(["Fund_Clean", "Recipient_Key"])["Has_DR"].any()
 iar_by_rec = div_eval_df.groupby(["Fund_Clean", "Recipient_Key"])["Has_IAR"].any()
-docs_by_rec = div_eval_df.groupby(["Fund_Clean", "Recipient_Key"])["Has_IAR_Docs"].any()
 
 div_rec_unique = (
     div_eval_df.sort_values("Stage_Rank")
@@ -825,7 +816,6 @@ div_rec_unique = (
 )
 div_rec_unique["Rec_Has_DR"] = div_rec_unique.set_index(["Fund_Clean", "Recipient_Key"]).index.map(dr_by_rec).fillna(False)
 div_rec_unique["Rec_Has_IAR"] = div_rec_unique.set_index(["Fund_Clean", "Recipient_Key"]).index.map(iar_by_rec).fillna(False)
-div_rec_unique["Rec_Has_Docs"] = div_rec_unique.set_index(["Fund_Clean", "Recipient_Key"]).index.map(docs_by_rec).fillna(False)
 
 rem_by_div = compute_remaining_packages(div_eval_df, ["Division_Clean"])
 
@@ -840,7 +830,6 @@ for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
 
     dr_cnt = int(grp["Rec_Has_DR"].sum())
     iar_cnt = int(grp["Rec_Has_IAR"].sum())
-    docs_cnt = int(grp["Rec_Has_Docs"].sum())
 
     comp_rate = (comp_d / tot_d * 100) if tot_d > 0 else 0.0
 
@@ -862,7 +851,6 @@ for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
         "Completed": comp_d,
         "With DR Date": dr_cnt,
         "With IAR Date": iar_cnt,
-        "With IAR Docs": docs_cnt,
         "Completion (%)": round(comp_rate, 1),
         "Billing Status": pay_status,
     })
@@ -876,7 +864,6 @@ if not div_df.empty:
     ).drop(columns=["_reg_ord"])
 
 divs_ready_cnt = int((div_df["Billing Status"] == "✅ READY FOR BILLING").sum()) if not div_df.empty else 0
-divs_pend_docs_cnt = int((div_df["Billing Status"] == "🟡 PENDING DOCS").sum()) if not div_df.empty else 0
 divs_total_cnt = len(div_df)
 
 total_recipients = len(unique_rec)
@@ -973,7 +960,6 @@ if not div_df.empty:
         "Completed": div_df["Completed"].sum(),
         "With DR Date": div_df["With DR Date"].sum(),
         "With IAR Date": div_df["With IAR Date"].sum(),
-        "With IAR Docs": div_df["With IAR Docs"].sum(),
         "Completion (%)": round(div_df["Completed"].sum() / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
         "Billing Status": f"{divs_ready_cnt} READY",
     }])
@@ -1224,6 +1210,7 @@ with tab2:
         div_view = div_view[div_view["Billing Status"] == pay_filter]
 
     if not div_view.empty:
+        dyn_height = min(620, max(120, (len(div_view) + 1) * 36 + 10))
         st.dataframe(
             div_view.style.format({
                 "Total Recipients": "{:,.0f}",
@@ -1234,12 +1221,11 @@ with tab2:
                 "Completed": "{:,.0f}",
                 "With DR Date": "{:,.0f}",
                 "With IAR Date": "{:,.0f}",
-                "With IAR Docs": "{:,.0f}",
                 "Completion (%)": "{:.1f}%",
             }),
             use_container_width=True,
             hide_index=True,
-            height=620,
+            height=dyn_height,
             column_config={
                 "Region": st.column_config.TextColumn("Region", pinned=True, width="small"),
                 "Division (SDO)": st.column_config.TextColumn("Division (SDO)", pinned=True, width="medium"),
@@ -1251,7 +1237,6 @@ with tab2:
                 "Completed": st.column_config.NumberColumn("Completed", width="small"),
                 "With DR Date": st.column_config.NumberColumn("DR Date", width="small"),
                 "With IAR Date": st.column_config.NumberColumn("IAR Date", width="small"),
-                "With IAR Docs": st.column_config.NumberColumn("IAR Docs", width="small"),
                 "Completion (%)": st.column_config.NumberColumn("Comp. %", width="small"),
                 "Billing Status": st.column_config.TextColumn("Billing Status", width="medium"),
             },
@@ -1320,17 +1305,16 @@ with tab5:
             st.session_state["stage_overrides"] = {}
             st.session_state["dr_overrides"] = {}
             st.session_state["iar_overrides"] = {}
-            st.session_state["docs_overrides"] = {}
             st.rerun()
 
     lookup_cols = [
         "Row_ID", "Fund_Clean", "LOT", "Region_Clean", "Division_Clean",
-        "School_ID", "Package_Display", "Pkg_Count", "DR_Date", "IAR_Date", "IAR_Docs", "Delivery_Stage"
+        "School_ID", "Package_Display", "Pkg_Count", "DR_Date", "IAR_Date", "Delivery_Stage"
     ]
     lookup_df = filtered[lookup_cols].copy()
     lookup_df.columns = [
         "Row_ID", "Fund", "LOT", "Region", "Division (SDO)",
-        "School ID", "DCP Package", "Packages", "DR Date", "IAR Date", "IAR Docs", "Status"
+        "School ID", "DCP Package", "Packages", "DR Date", "IAR Date", "Status"
     ]
     if search_q.strip():
         q = search_q.strip().lower()
@@ -1339,7 +1323,7 @@ with tab5:
         ).any(axis=1)
         lookup_df = lookup_df[mask]
 
-    st.caption(f"Showing {len(lookup_df):,} records (double-click DR Date, IAR Date, IAR Docs, or Status to simulate)")
+    st.caption(f"Showing {len(lookup_df):,} records (double-click DR Date, IAR Date, or Status to simulate)")
     edited_df = st.data_editor(
         lookup_df.head(500),
         use_container_width=True,
@@ -1350,7 +1334,6 @@ with tab5:
             "Row_ID": None,
             "DR Date": st.column_config.TextColumn("DR Date (Editable)"),
             "IAR Date": st.column_config.TextColumn("IAR Date (Editable)"),
-            "IAR Docs": st.column_config.TextColumn("IAR Docs (Editable)"),
             "Status": st.column_config.SelectboxColumn(
                 "Status (Editable)",
                 options=["Completed", "Delivered (Pending Docs)", "Ongoing Delivery", "Successful Rebid"],
@@ -1363,7 +1346,6 @@ with tab5:
     orig_slice = lookup_df.head(500)
     orig_dr = dict(zip(orig_slice["Row_ID"], orig_slice["DR Date"]))
     orig_iar = dict(zip(orig_slice["Row_ID"], orig_slice["IAR Date"]))
-    orig_docs = dict(zip(orig_slice["Row_ID"], orig_slice["IAR Docs"]))
     orig_st = dict(zip(orig_slice["Row_ID"], orig_slice["Status"]))
 
     changed = False
@@ -1374,9 +1356,6 @@ with tab5:
             changed = True
         if str(row["IAR Date"]) != str(orig_iar.get(rid, "")):
             st.session_state["iar_overrides"][rid] = str(row["IAR Date"])
-            changed = True
-        if str(row["IAR Docs"]) != str(orig_docs.get(rid, "")):
-            st.session_state["docs_overrides"][rid] = str(row["IAR Docs"])
             changed = True
         if str(row["Status"]) != str(orig_st.get(rid, "")):
             st.session_state["stage_overrides"][rid] = str(row["Status"])
