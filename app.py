@@ -293,9 +293,6 @@ def is_explicitly_incomplete(s: pd.Series) -> pd.Series:
 
 
 def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
-    """
-    Normalizes Schools Division Office (SDO) names and separates Regional Offices (RO).
-    """
     val = re.sub(r"\s+", " ", str(raw_div or "")).strip()
     reg = str(region_str or "").upper().strip()
     if not val:
@@ -484,10 +481,13 @@ def classify_delivery_stages(df_in: pd.DataFrame) -> pd.DataFrame:
     billing_ready = df["Has_IAR"] & df["Has_IAR_Docs"] & (~docs_incomplete)
     traces_only = traces_completed & (~billing_ready)
 
+    # Matches Google Sheet formula: REGEXMATCH(deliveryStatus, "^(rebid|for rebid|successful rebid)$")
+    is_rebid = orig_status_lower.str.match(r"^(rebid|for rebid|successful rebid)$", na=False)
+
     conditions = [
         billing_ready,
         traces_only,
-        orig_status_lower == "successful rebid",
+        is_rebid,
     ]
     choices = ["Billing Ready (With DR/IAR)", "Completed (TRACES)", "Successful Rebid"]
     df["Delivery_Stage"] = np.select(conditions, choices, default="Ongoing Delivery")
@@ -763,8 +763,8 @@ assigned_region_map = unique_rec.set_index(["Fund_Clean", "Recipient_Key"])["Reg
 stage_priority = {
     "Billing Ready (With DR/IAR)": 4,
     "Completed (TRACES)": 3,
-    "Ongoing Delivery": 2,
-    "Successful Rebid": 1,
+    "Successful Rebid": 2,
+    "Ongoing Delivery": 1,
 }
 filtered["Stage_Rank"] = filtered["Delivery_Stage"].map(stage_priority).fillna(0)
 rec_stage = (
