@@ -12,7 +12,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 # PAGE CONFIG & MODERN EXECUTIVE STYLING
 # ==========================================
 st.set_page_config(
-    page_title="DCP Delivery Monitoring",
+    page_title="DCP Delivery & Division Billing Portal",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -258,15 +258,15 @@ COMPONENT_DISPLAY = {
 }
 
 STAGE_COLORS = {
-    "Billing Ready (With DR/IAR)": "#10b981",
-    "Completed (TRACES)": "#f59e0b",
+    "Completed": "#10b981",
+    "Delivered (Pending Docs)": "#f59e0b",
     "Ongoing Delivery": "#3b82f6",
     "Successful Rebid": "#8b5cf6",
 }
 
 
 # ==========================================
-# DATA LOADING, SDO NORMALIZATION & DOCS CHECK
+# DATA LOADING & SDO NORMALIZATION
 # ==========================================
 def clean_series(s: pd.Series) -> pd.Series:
     return (
@@ -285,11 +285,6 @@ def has_valid_entry(s: pd.Series) -> pd.Series:
     }
     cleaned = s.fillna("").astype(str).str.strip().str.lower()
     return ~cleaned.isin(invalid_tokens)
-
-
-def is_explicitly_incomplete(s: pd.Series) -> pd.Series:
-    cleaned = s.fillna("").astype(str).str.strip().str.lower()
-    return cleaned.str.contains("incomplete|pending|lacking|missing|for submission|no mov|no iar|no dr", regex=True, na=False)
 
 
 def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
@@ -322,7 +317,7 @@ def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
     up = re.sub(r"\s+", " ", up).strip()
 
     if up in {"SAN CARLOS CITY", "TALISAY CITY"} and reg:
-        up = f"{up} ({reg})"
+        up = f"{up} - R{reg}"
 
     return (up if up else "UNSPECIFIED DIVISION", True)
 
@@ -333,6 +328,17 @@ def find_col_by_keywords(columns, keywords) -> str:
         if any(k in c_low for k in keywords):
             return col
     return ""
+
+
+def raw_status_priority(status_text: str) -> int:
+    low = str(status_text or "").lower().strip()
+    if not low:
+        return 0
+    if "complete" in low:
+        return 3
+    if "delivered" in low:
+        return 2
+    return 1
 
 
 def standardize_tab(df_raw: pd.DataFrame, default_fund: str) -> pd.DataFrame:
@@ -386,8 +392,10 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
 
     df = pd.concat(frames, ignore_index=True)
 
-    raw_status_lookup = {}
+    raw_status_by_sid_lot = {}
+    raw_status_by_sid = {}
     raw_div_lookup = {}
+
     if "Raw_Delivery" in sheet_names:
         raw_df = xl.parse("Raw_Delivery", dtype=str)
         raw_cols = list(raw_df.columns)
@@ -400,24 +408,40 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
         if not stat_col and raw_df.shape[1] >= 7:
             stat_col = raw_cols[6]
 
+        lot_col = find_col_by_keywords(raw_cols, ["lot"])
         raw_div_col = find_col_by_keywords(raw_cols, ["division", "sdo"])
 
         if site_col:
             site_codes = clean_series(raw_df[site_col])
+            lot_vals = clean_series(raw_df[lot_col]) if lot_col else pd.Series([""] * len(raw_df))
+
             if stat_col:
                 cur_statuses = clean_series(raw_df[stat_col])
-                for sid, st_val in zip(site_codes, cur_statuses):
+                for sid, lot_v, st_val in zip(site_codes, lot_vals, cur_statuses):
                     if sid and st_val:
-                        raw_status_lookup[sid] = st_val
+                        new_p = raw_status_priority(st_val)
+                        # Keep highest status priority so Completed is never overwritten by For Delivery
+                        if new_p >= raw_status_priority(raw_status_by_sid.get(sid, "")):
+                            raw_status_by_sid[sid] = st_val
+                        if lot_v:
+                            key_sl = (sid, lot_v)
+                            if new_p >= raw_status_priority(raw_status_by_sid_lot.get(key_sl, "")):
+                                raw_status_by_sid_lot[key_sl] = st_val
+
             if raw_div_col:
                 cur_divs = clean_series(raw_df[raw_div_col])
                 for sid, d_val in zip(site_codes, cur_divs):
                     if sid and d_val:
                         raw_div_lookup[sid] = d_val
 
-    raw_mapped = df["School_ID"].map(raw_status_lookup).fillna("")
-    effective_raw_status = np.where(raw_mapped != "", raw_mapped, df["Col_N_Status"])
-    df["Effective_Raw_Status"] = effective_raw_status
+    mapped_statuses = []
+    for sid, lot_v, col_n in zip(df["School_ID"], df["LOT"], df["Col_N_Status"]):
+        cand_lot = raw_status_by_sid_lot.get((sid, lot_v), "") if (sid and lot_v) else ""
+        cand_sid = raw_status_by_sid.get(sid, "") if sid else ""
+        best = max([cand_lot, cand_sid, col_n], key=raw_status_priority)
+        mapped_statuses.append(best)
+
+    df["Effective_Raw_Status"] = mapped_statuses
 
     df["Region_Clean"] = df["Region"].str.upper().str.strip()
     df["Package_Lower"] = df["DCP_Package"].str.lower()
@@ -463,33 +487,36 @@ def classify_delivery_stages(df_in: pd.DataFrame) -> pd.DataFrame:
     df["Has_DR"] = has_valid_entry(df["DR_Date"])
     df["Has_IAR"] = has_valid_entry(df["IAR_Date"])
     df["Has_IAR_Docs"] = has_valid_entry(df["IAR_Docs"])
-    docs_incomplete = is_explicitly_incomplete(df["IAR_Docs"])
 
     eff_lower = df["Effective_Raw_Status"].str.lower().str.strip()
     orig_status_lower = df["Status"].str.lower().str.strip()
 
-    # Completed in TRACES (validated delivery, awaiting DR/IAR date extraction into sheet)
-    traces_completed = (
-        df["Has_DR"]
-        | df["Has_IAR"]
-        | docs_incomplete
-        | eff_lower.str.contains("complete|delivered|pending mov|pending dr|pending iar", regex=True, na=False)
-        | orig_status_lower.str.contains("complete|delivered|pending mov|pending dr|pending iar", regex=True, na=False)
+    # Completed in TRACES = Delivered AND submitted validated docs (Ready for Billing)
+    is_completed = (
+        (df["Has_IAR"] & df["Has_IAR_Docs"])
+        | eff_lower.str.contains("complete", regex=False, na=False)
+        | orig_status_lower.str.contains("complete", regex=False, na=False)
     )
 
-    # Billing Ready: TRACES Completed + actual IAR Date & IAR Docs encoded in sheet
-    billing_ready = df["Has_IAR"] & df["Has_IAR_Docs"] & (~docs_incomplete)
-    traces_only = traces_completed & (~billing_ready)
+    # Delivered physically, awaiting validated DR/IAR docs in TRACES
+    is_delivered_pending_docs = (~is_completed) & (
+        df["Has_DR"]
+        | df["Has_IAR"]
+        | eff_lower.str.contains("delivered|pending mov|pending dr|pending iar", regex=True, na=False)
+        | orig_status_lower.str.contains("delivered|pending mov|pending dr|pending iar", regex=True, na=False)
+    )
 
     # Matches Google Sheet formula: REGEXMATCH(deliveryStatus, "^(rebid|for rebid|successful rebid)$")
-    is_rebid = orig_status_lower.str.match(r"^(rebid|for rebid|successful rebid)$", na=False)
+    is_rebid = (~is_completed) & (~is_delivered_pending_docs) & (
+        orig_status_lower.str.match(r"^(rebid|for rebid|successful rebid)$", na=False)
+    )
 
     conditions = [
-        billing_ready,
-        traces_only,
+        is_completed,
+        is_delivered_pending_docs,
         is_rebid,
     ]
-    choices = ["Billing Ready (With DR/IAR)", "Completed (TRACES)", "Successful Rebid"]
+    choices = ["Completed", "Delivered (Pending Docs)", "Successful Rebid"]
     df["Delivery_Stage"] = np.select(conditions, choices, default="Ongoing Delivery")
     return df
 
@@ -533,7 +560,7 @@ def build_styled_excel(
         total_fill = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
         total_font = Font(bold=True, size=11)
         ready_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
-        encode_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+        pending_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
 
         for sheet_name in writer.sheets:
             ws = writer.sheets[sheet_name]
@@ -548,9 +575,9 @@ def build_styled_excel(
                     if any("READY FOR BILLING" in v for v in row_vals):
                         for c in row:
                             c.fill = ready_fill
-                    elif any("FOR DR/IAR ENCODING" in v for v in row_vals):
+                    elif any("PENDING DOCS" in v for v in row_vals):
                         for c in row:
-                            c.fill = encode_fill
+                            c.fill = pending_fill
 
             last_row = ws.max_row
             if last_row > 1:
@@ -574,7 +601,6 @@ for k, v in {
     "sel_division": "All",
     "sel_package": "All",
     "sel_stage": "All",
-    "require_encoded_dates": True,
     "include_ro_in_div": False,
     "stage_overrides": {},
     "dr_overrides": {},
@@ -692,7 +718,7 @@ st.markdown(
     f"""
     <div class="hero-banner">
         <div>
-            <div class="hero-title">DepEd DCP Delivery & Monitoring</div>
+            <div class="hero-title">DepEd DCP Delivery & Division Billing Portal</div>
             <div class="hero-subtitle">{subtitle_html}{sim_note}</div>
         </div>
         <div class="hero-badge">{sec_badge}</div>
@@ -721,7 +747,7 @@ if st.session_state["sel_division"] not in division_options:
     st.session_state["sel_division"] = "All"
 
 pkg_options = ["All"] + sorted(df["Package_Display"].unique().tolist())
-stage_options = ["All", "Billing Ready (With DR/IAR)", "Completed (TRACES)", "Ongoing Delivery", "Successful Rebid"]
+stage_options = ["All", "Completed", "Delivered (Pending Docs)", "Ongoing Delivery", "Successful Rebid"]
 
 s1, s2, s3, s4, s5, s6 = st.columns([1.1, 1.0, 1.45, 1.35, 1.35, 0.85])
 with s1:
@@ -755,14 +781,14 @@ if filtered.empty:
     st.stop()
 
 # ==========================================
-# KPI & ACTUAL DIVISION (SDO) BILLING COMPUTATIONS
+# KPI & DIVISION (SDO) BILLING COMPUTATIONS
 # ==========================================
 unique_rec = filtered.drop_duplicates(subset=["Fund_Clean", "Recipient_Key"], keep="last").copy()
 assigned_region_map = unique_rec.set_index(["Fund_Clean", "Recipient_Key"])["Region_Clean"]
 
 stage_priority = {
-    "Billing Ready (With DR/IAR)": 4,
-    "Completed (TRACES)": 3,
+    "Completed": 4,
+    "Delivered (Pending Docs)": 3,
     "Successful Rebid": 2,
     "Ongoing Delivery": 1,
 }
@@ -807,8 +833,8 @@ div_rows = []
 for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
     reg_d = grp["Region_Clean"].mode().iloc[0] if not grp["Region_Clean"].mode().empty else grp["Region_Clean"].iloc[0]
     tot_d = len(grp)
-    ready_d = int((grp["Delivery_Stage"] == "Billing Ready (With DR/IAR)").sum())
-    traces_d = int((grp["Delivery_Stage"] == "Completed (TRACES)").sum())
+    comp_d = int((grp["Delivery_Stage"] == "Completed").sum())
+    deliv_pend_d = int((grp["Delivery_Stage"] == "Delivered (Pending Docs)").sum())
     ong_d = int((grp["Delivery_Stage"] == "Ongoing Delivery").sum())
     reb_d = int((grp["Delivery_Stage"] == "Successful Rebid").sum())
 
@@ -816,16 +842,12 @@ for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
     iar_cnt = int(grp["Rec_Has_IAR"].sum())
     docs_cnt = int(grp["Rec_Has_Docs"].sum())
 
-    deliv_rate = ((ready_d + traces_d) / tot_d * 100) if tot_d > 0 else 0.0
-    ready_rate = (ready_d / tot_d * 100) if tot_d > 0 else 0.0
+    comp_rate = (comp_d / tot_d * 100) if tot_d > 0 else 0.0
 
-    all_delivered = (tot_d > 0) and ((ready_d + traces_d) == tot_d)
-    all_dates_encoded = (tot_d > 0) and (ready_d == tot_d)
-
-    if all_dates_encoded or (not st.session_state["require_encoded_dates"] and all_delivered):
+    if tot_d > 0 and comp_d == tot_d:
         pay_status = "✅ READY FOR BILLING"
-    elif all_delivered:
-        pay_status = "🟡 FOR DR/IAR ENCODING"
+    elif tot_d > 0 and (comp_d + deliv_pend_d) == tot_d:
+        pay_status = "🟡 PENDING DOCS"
     else:
         pay_status = "❌ INCOMPLETE DELIVERY"
 
@@ -836,38 +858,36 @@ for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
         "Remaining Packages": int(rem_by_div.get(div_name, 0)),
         "Ongoing Delivery": ong_d,
         "Successful Rebid": reb_d,
-        "Completed (TRACES)": traces_d,
-        "Billing Ready (With DR/IAR)": ready_d,
+        "Delivered (Pending Docs)": deliv_pend_d,
+        "Completed": comp_d,
         "With DR Date": dr_cnt,
         "With IAR Date": iar_cnt,
         "With IAR Docs": docs_cnt,
-        "TRACES Done (%)": round(deliv_rate, 1),
-        "Billing Ready (%)": round(ready_rate, 1),
-        "Billing Eligibility": pay_status,
+        "Completion (%)": round(comp_rate, 1),
+        "Billing Status": pay_status,
     })
 
 div_df = pd.DataFrame(div_rows)
 if not div_df.empty:
     div_df["_reg_ord"] = div_df["Region"].map(lambda r: REGION_ORDER.get(r, 999))
     div_df = div_df.sort_values(
-        by=["Billing Ready (%)", "TRACES Done (%)", "_reg_ord", "Division (SDO)"],
-        ascending=[False, False, True, True],
+        by=["Completion (%)", "_reg_ord", "Division (SDO)"],
+        ascending=[False, True, True],
     ).drop(columns=["_reg_ord"])
 
-divs_ready_cnt = int((div_df["Billing Eligibility"] == "✅ READY FOR BILLING").sum()) if not div_df.empty else 0
-divs_encode_cnt = int((div_df["Billing Eligibility"] == "🟡 FOR DR/IAR ENCODING").sum()) if not div_df.empty else 0
+divs_ready_cnt = int((div_df["Billing Status"] == "✅ READY FOR BILLING").sum()) if not div_df.empty else 0
+divs_pend_docs_cnt = int((div_df["Billing Status"] == "🟡 PENDING DOCS").sum()) if not div_df.empty else 0
 divs_total_cnt = len(div_df)
 
 total_recipients = len(unique_rec)
 total_rem_pkgs = int(compute_remaining_packages(filtered, ["Fund_Clean"]).sum())
 cnt_ongoing = int((rec_stage["Delivery_Stage"] == "Ongoing Delivery").sum())
 cnt_rebid = int((rec_stage["Delivery_Stage"] == "Successful Rebid").sum())
-cnt_traces = int((rec_stage["Delivery_Stage"] == "Completed (TRACES)").sum())
-cnt_ready = int((rec_stage["Delivery_Stage"] == "Billing Ready (With DR/IAR)").sum())
-cnt_delivered_total = cnt_ready + cnt_traces
+cnt_deliv_pend = int((rec_stage["Delivery_Stage"] == "Delivered (Pending Docs)").sum())
+cnt_comp = int((rec_stage["Delivery_Stage"] == "Completed").sum())
 
-pct_delivered = (cnt_delivered_total / total_recipients * 100) if total_recipients > 0 else 0.0
-pct_ready = (cnt_ready / total_recipients * 100) if total_recipients > 0 else 0.0
+pct_comp = (cnt_comp / total_recipients * 100) if total_recipients > 0 else 0.0
+pct_deliv_pend = (cnt_deliv_pend / total_recipients * 100) if total_recipients > 0 else 0.0
 pct_ongoing = (cnt_ongoing / total_recipients * 100) if total_recipients > 0 else 0.0
 
 cols = st.columns(7)
@@ -876,9 +896,9 @@ kpi_specs = [
     ("Remaining Pkgs", f"{total_rem_pkgs:,}", "Pending", "#f0f9ff", "#0284c7", "Undelivered packages"),
     ("Ongoing Delivery", f"{cnt_ongoing:,}", f"{pct_ongoing:.1f}%", "#eff6ff", "#2563eb", "Awarded / in transit"),
     ("Successful Rebid", f"{cnt_rebid:,}", "Rebid", "#f5f3ff", "#7c3aed", "Rebid allocation"),
-    ("Completed (TRACES)", f"{cnt_traces:,}", f"{pct_delivered:.1f}% Deliv.", "#fef3c7", "#b45309", "Validated, for date encoding"),
-    ("Billing Ready", f"{cnt_ready:,}", f"{pct_ready:.1f}%", "#ecfdf5", "#059669", "With DR/IAR dates encoded"),
-    ("SDOs Done / Ready", f"{divs_encode_cnt + divs_ready_cnt:,} / {divs_total_cnt:,}", f"{divs_ready_cnt} Ready", "#dcfce7", "#15803d", f"{divs_encode_cnt} for DR/IAR encoding"),
+    ("Delivered (No Docs)", f"{cnt_deliv_pend:,}", f"{pct_deliv_pend:.1f}%", "#fef3c7", "#b45309", "Awaiting DR/IAR validation"),
+    ("Completed", f"{cnt_comp:,}", f"{pct_comp:.1f}%", "#ecfdf5", "#059669", "Delivered & docs validated"),
+    ("Divisions Billable", f"{divs_ready_cnt:,} / {divs_total_cnt:,}", "100% Comp.", "#dcfce7", "#15803d", "SDOs ready for billing"),
 ]
 
 for col, (label, val, badge, bg_badge, fg_badge, foot) in zip(cols, kpi_specs):
@@ -912,10 +932,9 @@ reg_rows = []
 for reg in regions_present:
     r_sub = rec_stage[rec_stage["Region_Clean"] == reg]
     tot_r = int((unique_rec["Region_Clean"] == reg).sum())
-    ready_r = int((r_sub["Delivery_Stage"] == "Billing Ready (With DR/IAR)").sum())
-    traces_r = int((r_sub["Delivery_Stage"] == "Completed (TRACES)").sum())
-    deliv_rate = ((ready_r + traces_r) / tot_r * 100) if tot_r > 0 else 0.0
-    ready_rate = (ready_r / tot_r * 100) if tot_r > 0 else 0.0
+    comp_r = int((r_sub["Delivery_Stage"] == "Completed").sum())
+    deliv_r = int((r_sub["Delivery_Stage"] == "Delivered (Pending Docs)").sum())
+    comp_rate = (comp_r / tot_r * 100) if tot_r > 0 else 0.0
 
     reg_rows.append({
         "Region": str(reg),
@@ -923,10 +942,9 @@ for reg in regions_present:
         "Remaining Packages": int(rem_by_reg.get(reg, 0)),
         "Ongoing Delivery": int((r_sub["Delivery_Stage"] == "Ongoing Delivery").sum()),
         "Successful Rebid": int((r_sub["Delivery_Stage"] == "Successful Rebid").sum()),
-        "Completed (TRACES)": traces_r,
-        "Billing Ready (With DR/IAR)": ready_r,
-        "TRACES Done (%)": round(deliv_rate, 1),
-        "Billing Ready (%)": round(ready_rate, 1),
+        "Delivered (Pending Docs)": deliv_r,
+        "Completed": comp_r,
+        "Completion (%)": round(comp_rate, 1),
     })
 
 reg_df = pd.DataFrame(reg_rows)
@@ -936,10 +954,9 @@ reg_total = pd.DataFrame([{
     "Remaining Packages": reg_df["Remaining Packages"].sum(),
     "Ongoing Delivery": reg_df["Ongoing Delivery"].sum(),
     "Successful Rebid": reg_df["Successful Rebid"].sum(),
-    "Completed (TRACES)": reg_df["Completed (TRACES)"].sum(),
-    "Billing Ready (With DR/IAR)": reg_df["Billing Ready (With DR/IAR)"].sum(),
-    "TRACES Done (%)": round(pct_delivered, 1),
-    "Billing Ready (%)": round(pct_ready, 1),
+    "Delivered (Pending Docs)": reg_df["Delivered (Pending Docs)"].sum(),
+    "Completed": reg_df["Completed"].sum(),
+    "Completion (%)": round(pct_comp, 1),
 }])
 reg_display = pd.concat([reg_df, reg_total], ignore_index=True)
 
@@ -947,19 +964,18 @@ if not div_df.empty:
     tot_r_div = div_df["Total Recipients"].sum()
     div_total = pd.DataFrame([{
         "Region": "TOTAL",
-        "Division (SDO)": f"{divs_ready_cnt} Ready | {divs_encode_cnt} For Encoding (of {divs_total_cnt})",
+        "Division (SDO)": f"{divs_ready_cnt} Ready for Billing (of {divs_total_cnt} SDOs)",
         "Total Recipients": tot_r_div,
         "Remaining Packages": div_df["Remaining Packages"].sum(),
         "Ongoing Delivery": div_df["Ongoing Delivery"].sum(),
         "Successful Rebid": div_df["Successful Rebid"].sum(),
-        "Completed (TRACES)": div_df["Completed (TRACES)"].sum(),
-        "Billing Ready (With DR/IAR)": div_df["Billing Ready (With DR/IAR)"].sum(),
+        "Delivered (Pending Docs)": div_df["Delivered (Pending Docs)"].sum(),
+        "Completed": div_df["Completed"].sum(),
         "With DR Date": div_df["With DR Date"].sum(),
         "With IAR Date": div_df["With IAR Date"].sum(),
         "With IAR Docs": div_df["With IAR Docs"].sum(),
-        "TRACES Done (%)": round((div_df["Billing Ready (With DR/IAR)"].sum() + div_df["Completed (TRACES)"].sum()) / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
-        "Billing Ready (%)": round(div_df["Billing Ready (With DR/IAR)"].sum() / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
-        "Billing Eligibility": f"{divs_ready_cnt} READY",
+        "Completion (%)": round(div_df["Completed"].sum() / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
+        "Billing Status": f"{divs_ready_cnt} READY",
     }])
     div_display = pd.concat([div_df, div_total], ignore_index=True)
 else:
@@ -1032,7 +1048,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "💰 Division (SDO) Billing Status",
     "🗺️ Regional Table",
     "📦 Packages & Components",
-    "🔎 Lookup & Docs/Date Simulator",
+    "🔎 Lookup & Status Simulator",
 ])
 
 with tab1:
@@ -1046,7 +1062,7 @@ with tab1:
         st.markdown('<div class="section-header">📍 Regional Delivery Volume by Stage</div>', unsafe_allow_html=True)
         chart_melt = reg_df.melt(
             id_vars="Region",
-            value_vars=["Billing Ready (With DR/IAR)", "Completed (TRACES)", "Ongoing Delivery", "Successful Rebid"],
+            value_vars=["Completed", "Delivered (Pending Docs)", "Ongoing Delivery", "Successful Rebid"],
             var_name="Stage",
             value_name="Recipients",
         )
@@ -1084,8 +1100,8 @@ with tab1:
     with c_right:
         st.markdown('<div class="section-header">🍩 Overall Delivery Status Share</div>', unsafe_allow_html=True)
         pie_df = pd.DataFrame({
-            "Stage": ["Billing Ready (With DR/IAR)", "Completed (TRACES)", "Ongoing Delivery", "Successful Rebid"],
-            "Count": [cnt_ready, cnt_traces, cnt_ongoing, cnt_rebid],
+            "Stage": ["Completed", "Delivered (Pending Docs)", "Ongoing Delivery", "Successful Rebid"],
+            "Count": [cnt_comp, cnt_deliv_pend, cnt_ongoing, cnt_rebid],
         })
         pie_df = pie_df[pie_df["Count"] > 0]
         fig_donut = go.Figure(
@@ -1129,34 +1145,38 @@ with tab1:
     c_bot1, c_bot2 = st.columns([1.2, 1])
 
     with c_bot1:
-        st.markdown('<div class="section-header">📈 TRACES Delivery Completion (%) per Region</div>', unsafe_allow_html=True)
-        rate_sorted = reg_df.sort_values("TRACES Done (%)", ascending=True)
+        st.markdown('<div class="section-header">📈 Delivery Completion (%) per Region</div>', unsafe_allow_html=True)
+        rate_sorted = reg_df.sort_values("Completion (%)", ascending=True).copy()
         rate_sorted["Region"] = rate_sorted["Region"].astype(str)
+        rate_sorted["Label_Text"] = rate_sorted.apply(
+            lambda r: f"{r['Completion (%)']:.1f}% ({int(r['Completed']):,}/{int(r['Total Recipients']):,})", axis=1
+        )
         fig_rate = px.bar(
             rate_sorted,
-            x="TRACES Done (%)",
+            x="Completion (%)",
             y="Region",
             orientation="h",
-            text="TRACES Done (%)",
-            color="TRACES Done (%)",
+            text="Label_Text",
+            color="Completion (%)",
             color_continuous_scale=["#93c5fd", "#2563eb", "#10b981"],
-            range_x=[0, 114],
+            range_x=[0, 125],
             height=max(380, len(rate_sorted) * 26),
         )
         fig_rate.update_yaxes(type="category", title="")
-        fig_rate.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+        fig_rate.update_traces(textposition="outside")
         fig_rate.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
             coloraxis_showscale=False,
-            margin=dict(l=10, r=20, t=10, b=10),
-            xaxis=dict(title="Completed in TRACES (%)", gridcolor="#e2e8f0"),
+            margin=dict(l=10, r=30, t=10, b=10),
+            xaxis=dict(title="Completed (%)", gridcolor="#e2e8f0"),
         )
         st.plotly_chart(fig_rate, use_container_width=True)
 
     with c_bot2:
         st.markdown('<div class="section-header">📦 Remaining Packages by DCP Package</div>', unsafe_allow_html=True)
         pkg_sorted = pkg_df.sort_values("Remaining Packages", ascending=True)
+        max_rem = pkg_sorted["Remaining Packages"].max() if not pkg_sorted.empty else 100
         fig_pkg = px.bar(
             pkg_sorted,
             x="Remaining Packages",
@@ -1164,13 +1184,14 @@ with tab1:
             orientation="h",
             text="Remaining Packages",
             color_discrete_sequence=["#1d4ed8"],
+            range_x=[0, max_rem * 1.22 if max_rem > 0 else 10],
             height=max(380, len(rate_sorted) * 26),
         )
         fig_pkg.update_traces(texttemplate="%{text:,}", textposition="outside")
         fig_pkg.update_layout(
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=10, r=45, t=10, b=10),
+            margin=dict(l=10, r=40, t=10, b=10),
             xaxis=dict(title="Remaining Packages", gridcolor="#e2e8f0"),
             yaxis=dict(title=""),
         )
@@ -1179,26 +1200,18 @@ with tab1:
 with tab2:
     st.markdown('<div class="section-header">💰 Schools Division (SDO) Billing Status</div>', unsafe_allow_html=True)
     st.caption(
-        f"**{divs_total_cnt:,} unique Division Offices** sa dataset: "
-        f"**{divs_ready_cnt:,} Ready for Billing** (may encoded DR/IAR dates) • "
-        f"**{divs_encode_cnt:,} For DR/IAR Encoding** (100% Completed na sa TRACES, kailangan lang i-encode ang dates)."
+        f"**{divs_total_cnt:,} unique Division Offices** sa dataset • "
+        f"**{divs_ready_cnt:,} Ready for Billing** (100% Completed — delivered at validated na ang docs)."
     )
 
-    opt_c1, opt_c2, opt_c3 = st.columns([2.1, 1.1, 1.0])
+    opt_c1, opt_c2 = st.columns([2.4, 1.0])
     with opt_c1:
         pay_filter = st.radio(
             "Filter Billing Status",
-            ["All", "✅ READY FOR BILLING", "🟡 FOR DR/IAR ENCODING", "❌ INCOMPLETE DELIVERY"],
+            ["All", "✅ READY FOR BILLING", "🟡 PENDING DOCS", "❌ INCOMPLETE DELIVERY"],
             horizontal=True,
         )
     with opt_c2:
-        st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
-        st.checkbox(
-            "Require Encoded DR/IAR Dates",
-            key="require_encoded_dates",
-            help="Kapag naka-check, ang 100% TRACES Completed na wala pang encoded DR/IAR dates ay lalabas bilang '🟡 FOR DR/IAR ENCODING'.",
-        )
-    with opt_c3:
         st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
         st.checkbox(
             "Include Regional Offices (RO)",
@@ -1208,7 +1221,7 @@ with tab2:
 
     div_view = div_display.copy()
     if not div_view.empty and pay_filter != "All":
-        div_view = div_view[div_view["Billing Eligibility"] == pay_filter]
+        div_view = div_view[div_view["Billing Status"] == pay_filter]
 
     if not div_view.empty:
         st.dataframe(
@@ -1217,13 +1230,12 @@ with tab2:
                 "Remaining Packages": "{:,.0f}",
                 "Ongoing Delivery": "{:,.0f}",
                 "Successful Rebid": "{:,.0f}",
-                "Completed (TRACES)": "{:,.0f}",
-                "Billing Ready (With DR/IAR)": "{:,.0f}",
+                "Delivered (Pending Docs)": "{:,.0f}",
+                "Completed": "{:,.0f}",
                 "With DR Date": "{:,.0f}",
                 "With IAR Date": "{:,.0f}",
                 "With IAR Docs": "{:,.0f}",
-                "TRACES Done (%)": "{:.1f}%",
-                "Billing Ready (%)": "{:.1f}%",
+                "Completion (%)": "{:.1f}%",
             }),
             use_container_width=True,
             hide_index=True,
@@ -1235,14 +1247,13 @@ with tab2:
                 "Remaining Packages": st.column_config.NumberColumn("Rem. Pkgs", width="small"),
                 "Ongoing Delivery": st.column_config.NumberColumn("Ongoing", width="small"),
                 "Successful Rebid": st.column_config.NumberColumn("Rebid", width="small"),
-                "Completed (TRACES)": st.column_config.NumberColumn("TRACES Done", width="small"),
-                "Billing Ready (With DR/IAR)": st.column_config.NumberColumn("Billing Ready", width="small"),
+                "Delivered (Pending Docs)": st.column_config.NumberColumn("Deliv. (No Docs)", width="small"),
+                "Completed": st.column_config.NumberColumn("Completed", width="small"),
                 "With DR Date": st.column_config.NumberColumn("DR Date", width="small"),
                 "With IAR Date": st.column_config.NumberColumn("IAR Date", width="small"),
                 "With IAR Docs": st.column_config.NumberColumn("IAR Docs", width="small"),
-                "TRACES Done (%)": st.column_config.NumberColumn("TRACES %", width="small"),
-                "Billing Ready (%)": st.column_config.NumberColumn("Ready %", width="small"),
-                "Billing Eligibility": st.column_config.TextColumn("Billing Status", width="medium"),
+                "Completion (%)": st.column_config.NumberColumn("Comp. %", width="small"),
+                "Billing Status": st.column_config.TextColumn("Billing Status", width="medium"),
             },
         )
     else:
@@ -1256,10 +1267,9 @@ with tab3:
             "Remaining Packages": "{:,.0f}",
             "Ongoing Delivery": "{:,.0f}",
             "Successful Rebid": "{:,.0f}",
-            "Completed (TRACES)": "{:,.0f}",
-            "Billing Ready (With DR/IAR)": "{:,.0f}",
-            "TRACES Done (%)": "{:.1f}%",
-            "Billing Ready (%)": "{:.1f}%",
+            "Delivered (Pending Docs)": "{:,.0f}",
+            "Completed": "{:,.0f}",
+            "Completion (%)": "{:.1f}%",
         }),
         use_container_width=True,
         hide_index=True,
@@ -1293,16 +1303,16 @@ with tab4:
         )
 
 with tab5:
-    st.markdown('<div class="section-header">🔎 School / Division Lookup & DR / IAR Date Simulator</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🔎 School / Division Lookup & Status Simulator</div>', unsafe_allow_html=True)
     st.caption(
-        "I-encode ang extracted **DR Date**, **IAR Date**, at **IAR Docs** (hal. `Complete`) mula sa TRACES para makita agad ang paglipat mula **🟡 FOR DR/IAR ENCODING** patungong **✅ READY FOR BILLING**."
+        "Mag-search ng kahit anong School ID, Division (SDO), LOT, o Supplier. Puwede ring mag-simulate ng status updates dito nang hindi nababago ang live Google Sheet."
     )
 
     s_left, s_right = st.columns([3, 1])
     with s_left:
         search_q = st.text_input(
             "Search School ID, Division (SDO), Recipient Office, LOT, or Supplier",
-            placeholder="e.g. 502655, ALAMINOS CITY, DAGUPAN CITY, or Columbia Technologies...",
+            placeholder="e.g. 502655, BACOLOD CITY, SAN CARLOS CITY, or Columbia Technologies...",
         )
     with s_right:
         st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
@@ -1343,7 +1353,7 @@ with tab5:
             "IAR Docs": st.column_config.TextColumn("IAR Docs (Editable)"),
             "Status": st.column_config.SelectboxColumn(
                 "Status (Editable)",
-                options=["Billing Ready (With DR/IAR)", "Completed (TRACES)", "Ongoing Delivery", "Successful Rebid"],
+                options=["Completed", "Delivered (Pending Docs)", "Ongoing Delivery", "Successful Rebid"],
                 required=True,
             ),
         },
@@ -1383,7 +1393,7 @@ excel_bytes = build_styled_excel(reg_display, div_display, pkg_display, comp_dis
 st.markdown("<hr style='border:0; border-top:1px solid #e2e8f0; margin: 1.5rem 0 0.8rem 0;'>", unsafe_allow_html=True)
 dl_c1, dl_c2 = st.columns([3, 1])
 with dl_c1:
-    st.caption("Export Excel **Regional Summary**, **Division Billing Status**, **Package Distribution**, at **Component Breakdown**.")
+    st.caption("Kasama sa Excel export ang **Regional Summary**, **Division Billing Status**, **Package Distribution**, at **Component Breakdown**.")
 with dl_c2:
     st.download_button(
         label="📥 Export Full Excel Report (.xlsx)",
