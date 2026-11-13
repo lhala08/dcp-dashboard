@@ -13,7 +13,7 @@ from openpyxl.styles import Font, PatternFill, Alignment
 # ==========================================
 st.set_page_config(
     page_title="DCP Delivery & Division Billing Portal",
-    page_icon="🔒",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -95,7 +95,7 @@ st.markdown(
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 14px;
-        padding: 0.95rem 1.1rem;
+        padding: 1rem 1.05rem;
         box-shadow: 0 2px 10px rgba(15, 23, 42, 0.03);
         transition: transform 0.15s ease, box-shadow 0.15s ease;
         height: 100%;
@@ -108,32 +108,32 @@ st.markdown(
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 0.35rem;
+        margin-bottom: 0.4rem;
     }
     .kpi-label {
-        font-size: 0.74rem;
+        font-size: 0.72rem;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.04em;
         color: #64748b;
     }
     .kpi-pill {
-        font-size: 0.7rem;
+        font-size: 0.69rem;
         font-weight: 700;
-        padding: 0.16rem 0.52rem;
+        padding: 0.16rem 0.48rem;
         border-radius: 999px;
     }
     .kpi-number {
-        font-size: 1.65rem;
+        font-size: 1.58rem;
         font-weight: 800;
         color: #0f172a;
         line-height: 1.15;
         letter-spacing: -0.02em;
     }
     .kpi-foot {
-        font-size: 0.74rem;
+        font-size: 0.73rem;
         color: #94a3b8;
-        margin-top: 0.28rem;
+        margin-top: 0.3rem;
     }
     .section-header {
         font-size: 1.05rem;
@@ -188,8 +188,8 @@ def get_secret(key: str, default: str = "") -> str:
         return default
 
 
-SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
-APP_PASSWORD = "!dcp2026*"
+SHEET_ID = get_secret("1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g", "")
+APP_PASSWORD = get_secret("!dcp2026*", "")
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -261,7 +261,7 @@ STAGE_COLORS = {
 
 
 # ==========================================
-# DATA LOADING, SDO vs RO SEPARATION & DOCS CHECK
+# DATA LOADING, SDO NORMALIZATION & DOCS CHECK
 # ==========================================
 def clean_series(s: pd.Series) -> pd.Series:
     return (
@@ -287,17 +287,23 @@ def is_explicitly_incomplete(s: pd.Series) -> pd.Series:
     return cleaned.str.contains("incomplete|pending|lacking|missing|for submission|no mov|no iar", regex=True, na=False)
 
 
-def normalize_office_and_sdo(raw_div: str, region_str: str) -> tuple[str, bool]:
+def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
+    """
+    Normalizes Division (SDO) names from the actual spreadsheet so naming variations
+    merge accurately while Regional/Central Offices are tagged separately.
+    """
     val = re.sub(r"\s+", " ", str(raw_div or "")).strip()
     reg = str(region_str or "").upper().strip()
     if not val:
         return ("UNSPECIFIED DIVISION", False)
 
-    up = val.upper()
+    up = val.upper().replace(".", " ")
+    up = re.sub(r"\s+", " ", up).strip()
 
+    # Identify Regional Offices / Central Office / Bureaus (not SDOs)
     ro_patterns = [
-        r"^(DEPED\s+)?(RO|R\.O\.)[\s\-]*([IVX0-9]+|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
-        r"^REGION\s+([IVX0-9]+|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)$",
+        r"^(DEPED\s+)?(RO|R\s*O)[\s\-]*([IVX0-9]+A?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
+        r"^REGION\s+([IVX0-9]+A?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)$",
         r"REGIONAL\s+OFFICE",
         r"CENTRAL\s+OFFICE",
         r"^DEPED\s+CO\b",
@@ -307,10 +313,23 @@ def normalize_office_and_sdo(raw_div: str, region_str: str) -> tuple[str, bool]:
     if any(re.search(pat, up) for pat in ro_patterns):
         return (up, False)
 
-    up = re.sub(r"^(CITY\s+SCHOOLS\s+DIVISION\s+OF|SCHOOLS\s+DIVISION\s+OF|DIVISION\s+OF|SDO[\s\-]+)\s*", "", up).strip()
+    # Strip SDO prefixes
+    up = re.sub(
+        r"^(DEPED\s+)?(CITY\s+SCHOOLS\s+DIVISION\s+OF|SCHOOLS\s+DIVISION\s+OF|DIVISION\s+OF|SDO[\s\-]+)\s*",
+        "",
+        up,
+    ).strip()
 
-    if up == "SAN CARLOS CITY" and reg:
-        up = f"SAN CARLOS CITY ({reg})"
+    # Standardize Santo / Santa and "CITY OF X" -> "X CITY"
+    up = re.sub(r"\bSTO\b", "SANTO", up)
+    up = re.sub(r"\bSTA\b", "SANTA", up)
+    if up.startswith("CITY OF "):
+        up = up[len("CITY OF "):].strip() + " CITY"
+    up = re.sub(r"\s+", " ", up).strip()
+
+    # Keep genuine same-named SDOs in different regions distinct
+    if up in {"SAN CARLOS CITY", "TALISAY CITY"} and reg:
+        up = f"{up} ({reg})"
 
     return (up if up else "UNSPECIFIED DIVISION", True)
 
@@ -424,17 +443,11 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
         ),
     )
 
-    norm_results = [normalize_office_and_sdo(x, r) for x, r in zip(div_resolved, df["Region_Clean"])]
+    norm_results = [normalize_division_name(x, r) for x, r in zip(div_resolved, df["Region_Clean"])]
     df["Division_Clean"] = [r[0] for r in norm_results]
     df["Is_SDO"] = [r[1] for r in norm_results]
 
     is_nonteaching = df["Package_Lower"] == "laptop for non-teaching"
-    df["Delivery_Level"] = np.where(
-        is_nonteaching,
-        np.where(df["Is_SDO"], "Division Office (L4NT)", "Regional / Central Office (L4NT)"),
-        "School-Level Delivery",
-    )
-
     office_key = df["Region_Clean"] + "|" + df["Division_Clean"]
     df["Recipient_Key"] = np.where(
         is_nonteaching,
@@ -514,18 +527,15 @@ def compute_remaining_packages(sub_df: pd.DataFrame, group_cols: list) -> pd.Ser
 
 def build_styled_excel(
     reg_display: pd.DataFrame,
-    sdo_display: pd.DataFrame,
-    ro_display: pd.DataFrame,
+    div_display: pd.DataFrame,
     pkg_display: pd.DataFrame,
     comp_display: pd.DataFrame,
 ) -> bytes:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         reg_display.to_excel(writer, sheet_name="Regional_Summary", index=False)
-        if not sdo_display.empty:
-            sdo_display.to_excel(writer, sheet_name="SDO_Billing_Status", index=False)
-        if not ro_display.empty:
-            ro_display.to_excel(writer, sheet_name="RO_CO_L4NT_Billing", index=False)
+        if not div_display.empty:
+            div_display.to_excel(writer, sheet_name="Division_Billing_Status", index=False)
         pkg_display.to_excel(writer, sheet_name="Package_Distribution", index=False)
         if not comp_display.empty:
             comp_display.to_excel(writer, sheet_name="Component_Breakdown", index=False)
@@ -543,7 +553,7 @@ def build_styled_excel(
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal="center", vertical="center")
 
-            if sheet_name in ("SDO_Billing_Status", "RO_CO_L4NT_Billing"):
+            if sheet_name == "Division_Billing_Status":
                 for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
                     if any("ELIGIBLE FOR BILLING" in str(c.value or "") and "NOT" not in str(c.value or "") for c in row):
                         for c in row:
@@ -572,6 +582,7 @@ for k, v in {
     "sel_package": "All",
     "sel_stage": "All",
     "strict_docs_mode": False,
+    "include_ro_in_div": False,
     "stage_overrides": {},
     "dr_overrides": {},
     "iar_overrides": {},
@@ -666,7 +677,7 @@ active_badges = []
 for label, key in [
     ("Fund", "sel_fund"),
     ("Region", "sel_region"),
-    ("Division/Office", "sel_division"),
+    ("Division", "sel_division"),
     ("Package", "sel_package"),
     ("Status", "sel_stage"),
 ]:
@@ -676,7 +687,7 @@ for label, key in [
 subtitle_html = (
     " &nbsp;•&nbsp; ".join(active_badges)
     if active_badges
-    else "SDO Billing (Schools + Division L4NT) separated from Regional/Central Office L4NT &nbsp;•&nbsp; Strict Docs Verified"
+    else "All Funds &nbsp;•&nbsp; All Regions &nbsp;•&nbsp; All Divisions &nbsp;•&nbsp; Click any chart or slicer to filter"
 )
 
 total_sim_edits = (
@@ -710,10 +721,11 @@ region_options = ["All"] + sorted(
     key=lambda r: REGION_ORDER.get(r, 999),
 )
 
+div_source_df = df if st.session_state["include_ro_in_div"] else df[df["Is_SDO"]]
 if st.session_state["sel_region"] != "All":
-    div_pool = df[df["Region_Clean"] == st.session_state["sel_region"]]["Division_Clean"].unique().tolist()
+    div_pool = div_source_df[div_source_df["Region_Clean"] == st.session_state["sel_region"]]["Division_Clean"].unique().tolist()
 else:
-    div_pool = df["Division_Clean"].unique().tolist()
+    div_pool = div_source_df["Division_Clean"].unique().tolist()
 division_options = ["All"] + sorted(div_pool)
 
 if st.session_state["sel_division"] not in division_options:
@@ -728,7 +740,7 @@ with s1:
 with s2:
     st.selectbox("Region", region_options, key="sel_region")
 with s3:
-    st.selectbox("Division (SDO) / RO", division_options, key="sel_division")
+    st.selectbox("Division (SDO)", division_options, key="sel_division")
 with s4:
     st.selectbox("DCP Package", pkg_options, key="sel_package")
 with s5:
@@ -754,7 +766,7 @@ if filtered.empty:
     st.stop()
 
 # ==========================================
-# KPI & SEPARATE SDO vs RO/CO BILLING COMPUTATIONS
+# KPI & ACTUAL DIVISION (SDO) BILLING COMPUTATIONS
 # ==========================================
 unique_rec = filtered.drop_duplicates(subset=["Fund_Clean", "Recipient_Key"], keep="last").copy()
 assigned_region_map = unique_rec.set_index(["Fund_Clean", "Recipient_Key"])["Region_Clean"]
@@ -768,96 +780,84 @@ rec_stage = (
 )
 rec_stage["Region_Clean"] = rec_stage.set_index(["Fund_Clean", "Recipient_Key"]).index.map(assigned_region_map)
 
-
-def build_billing_table(eval_subset: pd.DataFrame, entity_col_label: str) -> pd.DataFrame:
-    if eval_subset.empty:
-        return pd.DataFrame()
-
-    sub = eval_subset.copy()
-    sub["Stage_Rank"] = sub["Delivery_Stage"].map(stage_priority).fillna(0)
-
-    dr_by_rec = sub.groupby(["Fund_Clean", "Recipient_Key"])["Has_DR"].any()
-    iar_by_rec = sub.groupby(["Fund_Clean", "Recipient_Key"])["Has_IAR"].any()
-    docs_by_rec = sub.groupby(["Fund_Clean", "Recipient_Key"])["Has_IAR_Docs"].any()
-
-    rec_u = (
-        sub.sort_values("Stage_Rank")
-        .drop_duplicates(subset=["Fund_Clean", "Recipient_Key"], keep="last")
-        .copy()
-    )
-    rec_u["Rec_Has_DR"] = rec_u.set_index(["Fund_Clean", "Recipient_Key"]).index.map(dr_by_rec).fillna(False)
-    rec_u["Rec_Has_IAR"] = rec_u.set_index(["Fund_Clean", "Recipient_Key"]).index.map(iar_by_rec).fillna(False)
-    rec_u["Rec_Has_Docs"] = rec_u.set_index(["Fund_Clean", "Recipient_Key"]).index.map(docs_by_rec).fillna(False)
-
-    rem_by_ent = compute_remaining_packages(sub, ["Division_Clean"])
-
-    rows = []
-    for ent_name, grp in rec_u.groupby("Division_Clean", sort=False):
-        reg_d = grp["Region_Clean"].mode().iloc[0] if not grp["Region_Clean"].mode().empty else grp["Region_Clean"].iloc[0]
-        tot_d = len(grp)
-        school_cnt = int((grp["Delivery_Level"] == "School-Level Delivery").sum())
-        l4nt_cnt = int((grp["Delivery_Level"] != "School-Level Delivery").sum())
-
-        comp_d = int((grp["Delivery_Stage"] == "Completed").sum())
-        pend_d = int((grp["Delivery_Stage"] == "Delivered, Docs Pending").sum())
-
-        dr_cnt = int(grp["Rec_Has_DR"].sum())
-        iar_cnt = int(grp["Rec_Has_IAR"].sum())
-        docs_cnt = int(grp["Rec_Has_Docs"].sum())
-
-        deliv_rate = ((comp_d + pend_d) / tot_d * 100) if tot_d > 0 else 0.0
-        comp_rate = (comp_d / tot_d * 100) if tot_d > 0 else 0.0
-
-        if tot_d > 0 and comp_d == tot_d and pend_d == 0:
-            pay_status = "✅ ELIGIBLE FOR BILLING"
-        else:
-            pay_status = "❌ NOT ELIGIBLE (INCOMPLETE DOCS / DELIVERY)"
-
-        rows.append({
-            "Region": reg_d,
-            entity_col_label: ent_name,
-            "School Recipients": school_cnt,
-            "L4NT Office Allocations": l4nt_cnt,
-            "Total Recipients": tot_d,
-            "Remaining Packages": int(rem_by_ent.get(ent_name, 0)),
-            "Delivered, Docs Pending": pend_d,
-            "Completed (Docs Verified)": comp_d,
-            "With DR Date": dr_cnt,
-            "With IAR Date": iar_cnt,
-            "With IAR Docs": docs_cnt,
-            "Delivery Rate (%)": round(deliv_rate, 1),
-            "Completion Rate (%)": round(comp_rate, 1),
-            "Billing Eligibility": pay_status,
-        })
-
-    res_df = pd.DataFrame(rows)
-    if not res_df.empty:
-        res_df["_reg_ord"] = res_df["Region"].map(lambda r: REGION_ORDER.get(r, 999))
-        res_df = res_df.sort_values(
-            by=["Completion Rate (%)", "Delivery Rate (%)", "_reg_ord", entity_col_label],
-            ascending=[False, False, True, True],
-        ).drop(columns=["_reg_ord"])
-    return res_df
-
-
-eval_base = df.copy()
+# Count actual unique Division Offices (SDOs) present in the data
+div_eval_df = df.copy()
+if not st.session_state["include_ro_in_div"]:
+    div_eval_df = div_eval_df[div_eval_df["Is_SDO"]].copy()
 if st.session_state["sel_fund"] != "All":
-    eval_base = eval_base[eval_base["Fund_Clean"] == st.session_state["sel_fund"]]
+    div_eval_df = div_eval_df[div_eval_df["Fund_Clean"] == st.session_state["sel_fund"]]
 if st.session_state["sel_region"] != "All":
-    eval_base = eval_base[eval_base["Region_Clean"] == st.session_state["sel_region"]]
+    div_eval_df = div_eval_df[div_eval_df["Region_Clean"] == st.session_state["sel_region"]]
 if st.session_state["sel_division"] != "All":
-    eval_base = eval_base[eval_base["Division_Clean"] == st.session_state["sel_division"]]
+    div_eval_df = div_eval_df[div_eval_df["Division_Clean"] == st.session_state["sel_division"]]
 if st.session_state["sel_package"] != "All":
-    eval_base = eval_base[eval_base["Package_Display"] == st.session_state["sel_package"]]
+    div_eval_df = div_eval_df[div_eval_df["Package_Display"] == st.session_state["sel_package"]]
 
-sdo_df = build_billing_table(eval_base[eval_base["Is_SDO"]], "Division (SDO)")
-ro_df = build_billing_table(eval_base[~eval_base["Is_SDO"]], "Regional / Central Office")
+div_eval_df["Stage_Rank"] = div_eval_df["Delivery_Stage"].map(stage_priority).fillna(0)
 
-sdos_ready_cnt = int((sdo_df["Billing Eligibility"] == "✅ ELIGIBLE FOR BILLING").sum()) if not sdo_df.empty else 0
-sdos_total_cnt = len(sdo_df)
+dr_by_rec = div_eval_df.groupby(["Fund_Clean", "Recipient_Key"])["Has_DR"].any()
+iar_by_rec = div_eval_df.groupby(["Fund_Clean", "Recipient_Key"])["Has_IAR"].any()
+docs_by_rec = div_eval_df.groupby(["Fund_Clean", "Recipient_Key"])["Has_IAR_Docs"].any()
 
-ros_ready_cnt = int((ro_df["Billing Eligibility"] == "✅ ELIGIBLE FOR BILLING").sum()) if not ro_df.empty else 0
-ros_total_cnt = len(ro_df)
+div_rec_unique = (
+    div_eval_df.sort_values("Stage_Rank")
+    .drop_duplicates(subset=["Fund_Clean", "Recipient_Key"], keep="last")
+    .copy()
+)
+div_rec_unique["Rec_Has_DR"] = div_rec_unique.set_index(["Fund_Clean", "Recipient_Key"]).index.map(dr_by_rec).fillna(False)
+div_rec_unique["Rec_Has_IAR"] = div_rec_unique.set_index(["Fund_Clean", "Recipient_Key"]).index.map(iar_by_rec).fillna(False)
+div_rec_unique["Rec_Has_Docs"] = div_rec_unique.set_index(["Fund_Clean", "Recipient_Key"]).index.map(docs_by_rec).fillna(False)
+
+rem_by_div = compute_remaining_packages(div_eval_df, ["Division_Clean"])
+
+div_rows = []
+for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
+    reg_d = grp["Region_Clean"].mode().iloc[0] if not grp["Region_Clean"].mode().empty else grp["Region_Clean"].iloc[0]
+    tot_d = len(grp)
+    comp_d = int((grp["Delivery_Stage"] == "Completed").sum())
+    pend_d = int((grp["Delivery_Stage"] == "Delivered, Docs Pending").sum())
+    ong_d = int((grp["Delivery_Stage"] == "Ongoing Delivery").sum())
+    reb_d = int((grp["Delivery_Stage"] == "Successful Rebid").sum())
+
+    dr_cnt = int(grp["Rec_Has_DR"].sum())
+    iar_cnt = int(grp["Rec_Has_IAR"].sum())
+    docs_cnt = int(grp["Rec_Has_Docs"].sum())
+
+    deliv_rate = ((comp_d + pend_d) / tot_d * 100) if tot_d > 0 else 0.0
+    comp_rate = (comp_d / tot_d * 100) if tot_d > 0 else 0.0
+
+    if tot_d > 0 and comp_d == tot_d and pend_d == 0:
+        pay_status = "✅ ELIGIBLE FOR BILLING"
+    else:
+        pay_status = "❌ NOT ELIGIBLE (INCOMPLETE DOCS / DELIVERY)"
+
+    div_rows.append({
+        "Region": reg_d,
+        "Division (SDO)": div_name,
+        "Total Recipients": tot_d,
+        "Remaining Packages": int(rem_by_div.get(div_name, 0)),
+        "Ongoing Delivery": ong_d,
+        "Successful Rebid": reb_d,
+        "Delivered, Docs Pending": pend_d,
+        "Completed (Docs Verified)": comp_d,
+        "With DR Date": dr_cnt,
+        "With IAR Date": iar_cnt,
+        "With IAR Docs": docs_cnt,
+        "Delivery Rate (%)": round(deliv_rate, 1),
+        "Completion Rate (%)": round(comp_rate, 1),
+        "Billing Eligibility": pay_status,
+    })
+
+div_df = pd.DataFrame(div_rows)
+if not div_df.empty:
+    div_df["_reg_ord"] = div_df["Region"].map(lambda r: REGION_ORDER.get(r, 999))
+    div_df = div_df.sort_values(
+        by=["Completion Rate (%)", "Delivery Rate (%)", "_reg_ord", "Division (SDO)"],
+        ascending=[False, False, True, True],
+    ).drop(columns=["_reg_ord"])
+
+divs_ready_cnt = int((div_df["Billing Eligibility"] == "✅ ELIGIBLE FOR BILLING").sum()) if not div_df.empty else 0
+divs_total_cnt = len(div_df)
 
 total_recipients = len(unique_rec)
 total_rem_pkgs = int(compute_remaining_packages(filtered, ["Fund_Clean"]).sum())
@@ -871,39 +871,35 @@ pct_delivered = (cnt_delivered_total / total_recipients * 100) if total_recipien
 pct_completed = (cnt_completed / total_recipients * 100) if total_recipients > 0 else 0.0
 pct_ongoing = (cnt_ongoing / total_recipients * 100) if total_recipients > 0 else 0.0
 
-kpi_row1 = [
-    ("Total Recipients", f"{total_recipients:,}", "100%", "#eff6ff", "#1d4ed8", "Schools + Division/RO L4NT"),
-    ("Remaining Packages", f"{total_rem_pkgs:,}", "Pending", "#f0f9ff", "#0284c7", "Undelivered packages"),
+# 7 Clean KPI Cards in 1 Row
+cols = st.columns(7)
+kpi_specs = [
+    ("Total Recipients", f"{total_recipients:,}", "100%", "#eff6ff", "#1d4ed8", "Unique schools/offices"),
+    ("Remaining Pkgs", f"{total_rem_pkgs:,}", "Pending", "#f0f9ff", "#0284c7", "Undelivered packages"),
     ("Ongoing Delivery", f"{cnt_ongoing:,}", f"{pct_ongoing:.1f}%", "#eff6ff", "#2563eb", "Awarded / in transit"),
     ("Successful Rebid", f"{cnt_rebid:,}", "Rebid", "#f5f3ff", "#7c3aed", "Rebid allocation"),
-]
-kpi_row2 = [
     ("Docs Pending", f"{cnt_pending_docs:,}", f"{pct_delivered:.1f}% Deliv.", "#fff7ed", "#ea580c", "Delivered, incomplete docs"),
     ("Fully Completed", f"{cnt_completed:,}", f"{pct_completed:.1f}%", "#ecfdf5", "#059669", "Delivery + Docs verified"),
-    ("SDOs Billable (~221)", f"{sdos_ready_cnt:,} / {sdos_total_cnt:,}", "SDOs", "#dcfce7", "#15803d", "Schools + SDO L4NT 100% done"),
-    ("RO / CO L4NT Billable", f"{ros_ready_cnt:,} / {ros_total_cnt:,}", "RO / CO", "#e0f2fe", "#0369a1", "Regional/CO L4NT 100% done"),
+    ("Divisions Billable", f"{divs_ready_cnt:,} / {divs_total_cnt:,}", "100% Docs", "#dcfce7", "#15803d", "SDOs eligible for billing"),
 ]
 
-for row_specs in (kpi_row1, kpi_row2):
-    r_cols = st.columns(4)
-    for col, (label, val, badge, bg_badge, fg_badge, foot) in zip(r_cols, row_specs):
-        with col:
-            st.markdown(
-                f"""
-                <div class="kpi-card">
-                    <div class="kpi-top">
-                        <span class="kpi-label">{label}</span>
-                        <span class="kpi-pill" style="background:{bg_badge}; color:{fg_badge};">{badge}</span>
-                    </div>
-                    <div class="kpi-number">{val}</div>
-                    <div class="kpi-foot">{foot}</div>
+for col, (label, val, badge, bg_badge, fg_badge, foot) in zip(cols, kpi_specs):
+    with col:
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-top">
+                    <span class="kpi-label">{label}</span>
+                    <span class="kpi-pill" style="background:{bg_badge}; color:{fg_badge};">{badge}</span>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    st.markdown("<div style='height: 0.55rem;'></div>", unsafe_allow_html=True)
+                <div class="kpi-number">{val}</div>
+                <div class="kpi-foot">{foot}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-st.markdown("<div style='height: 0.45rem;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='height: 0.9rem;'></div>", unsafe_allow_html=True)
 
 # ==========================================
 # PREPARE SUMMARY TABLES
@@ -949,32 +945,27 @@ reg_total = pd.DataFrame([{
 }])
 reg_display = pd.concat([reg_df, reg_total], ignore_index=True)
 
-
-def append_billing_total(df_in: pd.DataFrame, name_col: str, summary_text: str, ready_cnt: int) -> pd.DataFrame:
-    if df_in.empty:
-        return pd.DataFrame()
-    tot_r = df_in["Total Recipients"].sum()
-    tot_row = pd.DataFrame([{
+if not div_df.empty:
+    tot_r_div = div_df["Total Recipients"].sum()
+    div_total = pd.DataFrame([{
         "Region": "TOTAL",
-        name_col: summary_text,
-        "School Recipients": df_in["School Recipients"].sum(),
-        "L4NT Office Allocations": df_in["L4NT Office Allocations"].sum(),
-        "Total Recipients": tot_r,
-        "Remaining Packages": df_in["Remaining Packages"].sum(),
-        "Delivered, Docs Pending": df_in["Delivered, Docs Pending"].sum(),
-        "Completed (Docs Verified)": df_in["Completed (Docs Verified)"].sum(),
-        "With DR Date": df_in["With DR Date"].sum(),
-        "With IAR Date": df_in["With IAR Date"].sum(),
-        "With IAR Docs": df_in["With IAR Docs"].sum(),
-        "Delivery Rate (%)": round((df_in["Completed (Docs Verified)"].sum() + df_in["Delivered, Docs Pending"].sum()) / tot_r * 100, 1) if tot_r > 0 else 0.0,
-        "Completion Rate (%)": round(df_in["Completed (Docs Verified)"].sum() / tot_r * 100, 1) if tot_r > 0 else 0.0,
-        "Billing Eligibility": f"{ready_cnt} ELIGIBLE",
+        "Division (SDO)": f"{divs_ready_cnt} of {divs_total_cnt} Divisions Eligible",
+        "Total Recipients": tot_r_div,
+        "Remaining Packages": div_df["Remaining Packages"].sum(),
+        "Ongoing Delivery": div_df["Ongoing Delivery"].sum(),
+        "Successful Rebid": div_df["Successful Rebid"].sum(),
+        "Delivered, Docs Pending": div_df["Delivered, Docs Pending"].sum(),
+        "Completed (Docs Verified)": div_df["Completed (Docs Verified)"].sum(),
+        "With DR Date": div_df["With DR Date"].sum(),
+        "With IAR Date": div_df["With IAR Date"].sum(),
+        "With IAR Docs": div_df["With IAR Docs"].sum(),
+        "Delivery Rate (%)": round((div_df["Completed (Docs Verified)"].sum() + div_df["Delivered, Docs Pending"].sum()) / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
+        "Completion Rate (%)": round(div_df["Completed (Docs Verified)"].sum() / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
+        "Billing Eligibility": f"{divs_ready_cnt} ELIGIBLE",
     }])
-    return pd.concat([df_in, tot_row], ignore_index=True)
-
-
-sdo_display = append_billing_total(sdo_df, "Division (SDO)", f"{sdos_ready_cnt} of {sdos_total_cnt} SDOs Eligible", sdos_ready_cnt)
-ro_display = append_billing_total(ro_df, "Regional / Central Office", f"{ros_ready_cnt} of {ros_total_cnt} RO/CO Eligible", ros_ready_cnt)
+    div_display = pd.concat([div_df, div_total], ignore_index=True)
+else:
+    div_display = pd.DataFrame()
 
 rem_by_pkg = compute_remaining_packages(filtered, ["Package_Display"])
 pkg_rows = []
@@ -1040,7 +1031,7 @@ else:
 # ==========================================
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Executive Visuals (Clickable)",
-    "💰 SDO & RO L4NT Billing Eligibility",
+    "💰 Division (SDO) Billing Eligibility",
     "🗺️ Regional Table",
     "📦 Packages & Components",
     "🔎 Lookup & Docs/Date Simulator",
@@ -1188,13 +1179,13 @@ with tab1:
         st.plotly_chart(fig_pkg, use_container_width=True)
 
 with tab2:
-    st.markdown('<div class="section-header">🏫 1. Schools Division Office (SDO) Billing Eligibility (~221 SDOs)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">💰 Schools Division (SDO) Billing Eligibility</div>', unsafe_allow_html=True)
     st.caption(
-        "Kasama sa bawat SDO ang **lahat ng school deliveries** sa ilalim nito **PLUS ang L4NT allocation ng mismong Division Office**. "
-        "Hindi eligible ang SDO kung may kahit 1 recipient pa na kulang ang delivery, IAR Date, o IAR Docs."
+        f"Aktuwal na bilang mula sa dataset: **{divs_total_cnt:,} unique Division Offices** "
+        f"({divs_ready_cnt:,} eligible for billing). Hindi eligible ang Division kung may kahit 1 recipient pa na kulang ang delivery, IAR Date, o IAR Docs."
     )
 
-    opt_c1, opt_c2 = st.columns([2, 1.5])
+    opt_c1, opt_c2, opt_c3 = st.columns([1.6, 1.3, 1.1])
     with opt_c1:
         pay_filter = st.radio(
             "Filter Billing Status",
@@ -1207,18 +1198,24 @@ with tab2:
             key="strict_docs_mode",
             help="Kapag naka-check, kailangang may laman ang parehong IAR Date (Col L) at IAR Docs (Col M) para mabilang na Completed.",
         )
+    with opt_c3:
+        st.checkbox(
+            "Include Regional / Central Offices",
+            key="include_ro_in_div",
+            help="Naka-uncheck by default para pure Schools Division Offices lang ang bilangin.",
+        )
 
-    sdo_view = sdo_display.copy()
-    if not sdo_view.empty and pay_filter != "All":
-        sdo_view = sdo_view[sdo_view["Billing Eligibility"] == pay_filter]
+    div_view = div_display.copy()
+    if not div_view.empty and pay_filter != "All":
+        div_view = div_view[div_view["Billing Eligibility"] == pay_filter]
 
-    if not sdo_view.empty:
+    if not div_view.empty:
         st.dataframe(
-            sdo_view.style.format({
-                "School Recipients": "{:,.0f}",
-                "L4NT Office Allocations": "{:,.0f}",
+            div_view.style.format({
                 "Total Recipients": "{:,.0f}",
                 "Remaining Packages": "{:,.0f}",
+                "Ongoing Delivery": "{:,.0f}",
+                "Successful Rebid": "{:,.0f}",
                 "Delivered, Docs Pending": "{:,.0f}",
                 "Completed (Docs Verified)": "{:,.0f}",
                 "With DR Date": "{:,.0f}",
@@ -1229,40 +1226,10 @@ with tab2:
             }),
             use_container_width=True,
             hide_index=True,
-            height=480,
+            height=620,
         )
     else:
-        st.info("No SDOs match the selected billing status filter.")
-
-    st.markdown("<hr style='border:0; border-top:1px solid #cbd5e1; margin: 1.4rem 0;'>", unsafe_allow_html=True)
-    st.markdown('<div class="section-header">🏢 2. Regional & Central Office L4NT Billing Eligibility (Separate from SDOs)</div>', unsafe_allow_html=True)
-    st.caption("Para sa **Laptop for Non-Teaching (L4NT)** na direktang dine-deliver sa Regional Offices at Central Office (hiwalay sa SDO billing).")
-
-    ro_view = ro_display.copy()
-    if not ro_view.empty and pay_filter != "All":
-        ro_view = ro_view[ro_view["Billing Eligibility"] == pay_filter]
-
-    if not ro_view.empty:
-        st.dataframe(
-            ro_view.style.format({
-                "School Recipients": "{:,.0f}",
-                "L4NT Office Allocations": "{:,.0f}",
-                "Total Recipients": "{:,.0f}",
-                "Remaining Packages": "{:,.0f}",
-                "Delivered, Docs Pending": "{:,.0f}",
-                "Completed (Docs Verified)": "{:,.0f}",
-                "With DR Date": "{:,.0f}",
-                "With IAR Date": "{:,.0f}",
-                "With IAR Docs": "{:,.0f}",
-                "Delivery Rate (%)": "{:.1f}%",
-                "Completion Rate (%)": "{:.1f}%",
-            }),
-            use_container_width=True,
-            hide_index=True,
-            height=360,
-        )
-    else:
-        st.info("No Regional / Central Office L4NT records match the selected filters.")
+        st.info("No divisions match the selected billing status filter.")
 
 with tab3:
     st.markdown('<div class="section-header">🗺️ Regional Delivery Monitoring Breakdown</div>', unsafe_allow_html=True)
@@ -1309,16 +1276,16 @@ with tab4:
         )
 
 with tab5:
-    st.markdown('<div class="section-header">🔎 School / SDO / RO Lookup & IAR Date / Docs Simulator</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🔎 School / Division Lookup & IAR Date / Docs Simulator</div>', unsafe_allow_html=True)
     st.caption(
-        "Mag-type ng petsa sa **DR Date** / **IAR Date** at ilagay ang **IAR Docs** (hal. `Complete`) para i-test kung magiging **✅ ELIGIBLE FOR BILLING** na ang SDO o Regional Office."
+        "Mag-type ng petsa sa **DR Date** / **IAR Date** at ilagay ang **IAR Docs** (hal. `Complete`) para i-test kung magiging **✅ ELIGIBLE FOR BILLING** na ang buong Division."
     )
 
     s_left, s_right = st.columns([3, 1])
     with s_left:
         search_q = st.text_input(
-            "Search School ID, Division (SDO), Regional Office, LOT, or Supplier",
-            placeholder="e.g. 502655, PASIG CITY, RO IV-A, or Columbia Technologies...",
+            "Search School ID, Division (SDO), Recipient Office, LOT, or Supplier",
+            placeholder="e.g. 502655, PASIG CITY, BATANGAS, or Columbia Technologies...",
         )
     with s_right:
         st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
@@ -1330,12 +1297,12 @@ with tab5:
             st.rerun()
 
     lookup_cols = [
-        "Row_ID", "Fund_Clean", "LOT", "Region_Clean", "Division_Clean", "Delivery_Level",
+        "Row_ID", "Fund_Clean", "LOT", "Region_Clean", "Division_Clean",
         "School_ID", "Package_Display", "Pkg_Count", "DR_Date", "IAR_Date", "IAR_Docs", "Delivery_Stage"
     ]
     lookup_df = filtered[lookup_cols].copy()
     lookup_df.columns = [
-        "Row_ID", "Fund", "LOT", "Region", "Division / Office", "Delivery Level",
+        "Row_ID", "Fund", "LOT", "Region", "Division (SDO)",
         "School ID", "DCP Package", "Packages", "DR Date", "IAR Date", "IAR Docs", "Status"
     ]
     if search_q.strip():
@@ -1351,7 +1318,7 @@ with tab5:
         use_container_width=True,
         hide_index=True,
         height=520,
-        disabled=["Row_ID", "Fund", "LOT", "Region", "Division / Office", "Delivery Level", "School ID", "DCP Package", "Packages"],
+        disabled=["Row_ID", "Fund", "LOT", "Region", "Division (SDO)", "School ID", "DCP Package", "Packages"],
         column_config={
             "Row_ID": None,
             "DR Date": st.column_config.TextColumn("DR Date (Editable)"),
@@ -1394,12 +1361,12 @@ with tab5:
 # ==========================================
 # EXPORT BAR
 # ==========================================
-excel_bytes = build_styled_excel(reg_display, sdo_display, ro_display, pkg_display, comp_display)
+excel_bytes = build_styled_excel(reg_display, div_display, pkg_display, comp_display)
 
 st.markdown("<hr style='border:0; border-top:1px solid #e2e8f0; margin: 1.5rem 0 0.8rem 0;'>", unsafe_allow_html=True)
 dl_c1, dl_c2 = st.columns([3, 1])
 with dl_c1:
-    st.caption("Kasama sa Excel export ang **Regional Summary**, **SDO Billing Status**, **RO/CO L4NT Billing**, **Package Distribution**, at **Component Breakdown**.")
+    st.caption("Kasama sa Excel export ang **Regional Summary**, **Division Billing Status**, **Package Distribution**, at **Component Breakdown**.")
 with dl_c2:
     st.download_button(
         label="📥 Export Full Excel Report (.xlsx)",
