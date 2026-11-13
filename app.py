@@ -321,15 +321,15 @@ def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
     up = re.sub(r"\s+", " ", up).strip()
 
     ro_patterns = [
-        r"^(DEPED\s+)?(RO|R\s*O)[\s\-]*([IVX0-9]+[\s\-]*[AB]?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
-        r"^(DEPED\s+)?REGION[\s\-]*([IVX0-9]+[\s\-]*[AB]?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
+        r"^(\s+)?(RO|R\s*O)[\s\-]*([IVX0-9]+[\s\-]*[AB]?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
+        r"^(\s+)?REGION[\s\-]*([IVX0-9]+[\s\-]*[AB]?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
         r"REGIONAL\s+OFFICE",
     ]
     if any(re.search(pat, up) for pat in ro_patterns):
         return (up, False)
 
     up = re.sub(
-        r"^(DEPED\s+)?(CITY\s+SCHOOLS\s+DIVISION\s+OF|SCHOOLS\s+DIVISION\s+OF|DIVISION\s+OF|SDO[\s\-]+)\s*",
+        r"^(\s+)?(CITY\s+SCHOOLS\s+DIVISION\s+OF|SCHOOLS\s+DIVISION\s+OF|DIVISION\s+OF|SDO[\s\-]+)\s*",
         "",
         up,
     ).strip()
