@@ -179,17 +179,22 @@ st.markdown(
 
 
 # ==========================================
-# SECRETS & PASSWORD GATE (WITH 1-CLICK VIP LINK)
+# CREDENTIALS & PASSWORD GATE (PRESERVED)
 # ==========================================
+DEFAULT_SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
+DEFAULT_APP_PASSWORD = "!dcp2026*"
+
+
 def get_secret(key: str, default: str = "") -> str:
     try:
-        return str(st.secrets.get(key, default))
+        val = st.secrets.get(key, default)
+        return str(val) if val else default
     except Exception:
         return default
 
 
-SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
-APP_PASSWORD = "!dcp2026!*"
+SHEET_ID = get_secret("SHEET_ID", DEFAULT_SHEET_ID)
+APP_PASSWORD = get_secret("APP_PASSWORD", DEFAULT_APP_PASSWORD)
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
@@ -253,8 +258,8 @@ COMPONENT_DISPLAY = {
 }
 
 STAGE_COLORS = {
-    "Completed": "#10b981",
-    "Delivered, Docs Pending": "#f97316",
+    "Completed (Verified)": "#10b981",
+    "Delivered, Pending DR/IAR": "#f97316",
     "Ongoing Delivery": "#3b82f6",
     "Successful Rebid": "#8b5cf6",
 }
@@ -284,13 +289,12 @@ def has_valid_entry(s: pd.Series) -> pd.Series:
 
 def is_explicitly_incomplete(s: pd.Series) -> pd.Series:
     cleaned = s.fillna("").astype(str).str.strip().str.lower()
-    return cleaned.str.contains("incomplete|pending|lacking|missing|for submission|no mov|no iar", regex=True, na=False)
+    return cleaned.str.contains("incomplete|pending|lacking|missing|for submission|no mov|no iar|no dr", regex=True, na=False)
 
 
 def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
     """
-    Normalizes Division (SDO) names from the actual spreadsheet so naming variations
-    merge accurately while Regional/Central Offices are tagged separately.
+    Normalizes Schools Division Office (SDO) names and separates Regional Offices (RO).
     """
     val = re.sub(r"\s+", " ", str(raw_div or "")).strip()
     reg = str(region_str or "").upper().strip()
@@ -300,15 +304,11 @@ def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
     up = val.upper().replace(".", " ")
     up = re.sub(r"\s+", " ", up).strip()
 
-    # Identify Regional Offices / Central Office / Bureaus (not SDOs)
+    # Identify Regional Offices (RO) cleanly without catching city names like ROXAS CITY
     ro_patterns = [
-        r"^(DEPED\s+)?(RO|R\s*O)[\s\-]*([IVX0-9]+A?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
-        r"^REGION\s+([IVX0-9]+A?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)$",
+        r"^(DEPED\s+)?(RO|R\s*O)[\s\-]*([IVX0-9]+[\s\-]*[AB]?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
+        r"^(DEPED\s+)?REGION[\s\-]*([IVX0-9]+[\s\-]*[AB]?|CAR|CARAGA|NCR|NIR|BARMM|MIMAROPA)\b",
         r"REGIONAL\s+OFFICE",
-        r"CENTRAL\s+OFFICE",
-        r"^DEPED\s+CO\b",
-        r"^CO\s*\-",
-        r"BUREAU\s+OF",
     ]
     if any(re.search(pat, up) for pat in ro_patterns):
         return (up, False)
@@ -320,14 +320,12 @@ def normalize_division_name(raw_div: str, region_str: str) -> tuple[str, bool]:
         up,
     ).strip()
 
-    # Standardize Santo / Santa and "CITY OF X" -> "X CITY"
     up = re.sub(r"\bSTO\b", "SANTO", up)
     up = re.sub(r"\bSTA\b", "SANTA", up)
     if up.startswith("CITY OF "):
         up = up[len("CITY OF "):].strip() + " CITY"
     up = re.sub(r"\s+", " ", up).strip()
 
-    # Keep genuine same-named SDOs in different regions distinct
     if up in {"SAN CARLOS CITY", "TALISAY CITY"} and reg:
         up = f"{up} ({reg})"
 
@@ -465,7 +463,7 @@ def process_data(excel_bytes: bytes) -> pd.DataFrame:
     return df
 
 
-def classify_delivery_stages(df_in: pd.DataFrame, strict_docs_mode: bool = False) -> pd.DataFrame:
+def classify_delivery_stages(df_in: pd.DataFrame, strict_docs_mode: bool = True) -> pd.DataFrame:
     df = df_in.copy()
     df["Has_DR"] = has_valid_entry(df["DR_Date"])
     df["Has_IAR"] = has_valid_entry(df["IAR_Date"])
@@ -475,33 +473,30 @@ def classify_delivery_stages(df_in: pd.DataFrame, strict_docs_mode: bool = False
     eff_lower = df["Effective_Raw_Status"].str.lower().str.strip()
     orig_status_lower = df["Status"].str.lower().str.strip()
 
+    marked_delivered = (
+        df["Has_DR"]
+        | df["Has_IAR"]
+        | docs_incomplete
+        | eff_lower.str.contains("complete|delivered|pending mov|pending dr|pending iar", regex=True, na=False)
+        | orig_status_lower.str.contains("complete|delivered|pending mov|pending dr|pending iar", regex=True, na=False)
+    )
+
     if strict_docs_mode:
+        # Completed (Verified) requires actual IAR Date + IAR Docs recorded
         is_completed = df["Has_IAR"] & df["Has_IAR_Docs"] & (~docs_incomplete)
-        is_delivered_pending = (
-            df["Has_DR"]
-            | df["Has_IAR"]
-            | eff_lower.isin(["complete", "completed"])
-            | eff_lower.str.contains("pending mov", na=False)
-            | (orig_status_lower.isin(["completed", "pending mov"]))
-        ) & (~is_completed)
+        is_delivered_pending = marked_delivered & (~is_completed)
     else:
         raw_or_status_done = (eff_lower.isin(["complete", "completed"]) | (orig_status_lower == "completed")) & (~docs_incomplete)
         iar_done = df["Has_IAR"] & (~docs_incomplete)
         is_completed = iar_done | raw_or_status_done
-        is_delivered_pending = (
-            df["Has_DR"]
-            | df["Has_IAR"]
-            | docs_incomplete
-            | eff_lower.str.contains("pending mov", na=False)
-            | (orig_status_lower == "pending mov")
-        ) & (~is_completed)
+        is_delivered_pending = marked_delivered & (~is_completed)
 
     conditions = [
         is_completed,
         is_delivered_pending,
         orig_status_lower == "successful rebid",
     ]
-    choices = ["Completed", "Delivered, Docs Pending", "Successful Rebid"]
+    choices = ["Completed (Verified)", "Delivered, Pending DR/IAR", "Successful Rebid"]
     df["Delivery_Stage"] = np.select(conditions, choices, default="Ongoing Delivery")
     return df
 
@@ -555,7 +550,7 @@ def build_styled_excel(
 
             if sheet_name == "Division_Billing_Status":
                 for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-                    if any("ELIGIBLE FOR BILLING" in str(c.value or "") and "NOT" not in str(c.value or "") for c in row):
+                    if any("ELIGIBLE" in str(c.value or "") and "NOT" not in str(c.value or "") for c in row):
                         for c in row:
                             c.fill = ready_fill
 
@@ -581,7 +576,7 @@ for k, v in {
     "sel_division": "All",
     "sel_package": "All",
     "sel_stage": "All",
-    "strict_docs_mode": False,
+    "strict_docs_mode": True,
     "include_ro_in_div": False,
     "stage_overrides": {},
     "dr_overrides": {},
@@ -605,30 +600,26 @@ def reset_all_filters():
 # ==========================================
 with st.sidebar:
     st.markdown("### 🎛️ Data Connection")
-    default_idx = 0 if SHEET_ID else 1
     source_mode = st.radio(
         "Source Mode",
-        ["Live Google Sheet (via Secrets)", "Upload Excel (.xlsx - 100% Private)"],
-        index=default_idx,
+        ["Live Google Sheet", "Upload Excel (.xlsx - 100% Private)"],
+        index=0,
     )
 
     excel_data = None
-    if source_mode.startswith("Live Google Sheet"):
-        if not SHEET_ID:
-            st.warning("`SHEET_ID` is not set in Streamlit Secrets yet. Add it in App Settings > Secrets, or use Upload Excel below.")
-        else:
-            if st.button("🔄 Sync Latest Google Sheet", use_container_width=True, type="primary"):
-                st.cache_data.clear()
-                st.session_state["stage_overrides"] = {}
-                st.session_state["dr_overrides"] = {}
-                st.session_state["iar_overrides"] = {}
-                st.session_state["docs_overrides"] = {}
-            try:
-                with st.spinner("Syncing live database..."):
-                    excel_data = load_workbook_from_gsheet(SHEET_ID)
-            except Exception as e:
-                st.error("Unable to fetch Google Sheet. Check 'Anyone with the link > Viewer' permission.")
-                st.caption(f"Details: {e}")
+    if source_mode == "Live Google Sheet":
+        if st.button("🔄 Sync Latest Google Sheet", use_container_width=True, type="primary"):
+            st.cache_data.clear()
+            st.session_state["stage_overrides"] = {}
+            st.session_state["dr_overrides"] = {}
+            st.session_state["iar_overrides"] = {}
+            st.session_state["docs_overrides"] = {}
+        try:
+            with st.spinner("Syncing live database..."):
+                excel_data = load_workbook_from_gsheet(SHEET_ID)
+        except Exception as e:
+            st.error("Unable to fetch Google Sheet. Check 'Anyone with the link > Viewer' permission.")
+            st.caption(f"Details: {e}")
     else:
         uploaded = st.file_uploader("Upload DCP Monitoring File", type=["xlsx"])
         if uploaded is not None:
@@ -732,9 +723,9 @@ if st.session_state["sel_division"] not in division_options:
     st.session_state["sel_division"] = "All"
 
 pkg_options = ["All"] + sorted(df["Package_Display"].unique().tolist())
-stage_options = ["All", "Completed", "Delivered, Docs Pending", "Ongoing Delivery", "Successful Rebid"]
+stage_options = ["All", "Completed (Verified)", "Delivered, Pending DR/IAR", "Ongoing Delivery", "Successful Rebid"]
 
-s1, s2, s3, s4, s5, s6 = st.columns([1.1, 1.0, 1.45, 1.35, 1.25, 0.85])
+s1, s2, s3, s4, s5, s6 = st.columns([1.1, 1.0, 1.45, 1.35, 1.35, 0.85])
 with s1:
     st.selectbox("Fund Source", fund_options, key="sel_fund")
 with s2:
@@ -771,7 +762,12 @@ if filtered.empty:
 unique_rec = filtered.drop_duplicates(subset=["Fund_Clean", "Recipient_Key"], keep="last").copy()
 assigned_region_map = unique_rec.set_index(["Fund_Clean", "Recipient_Key"])["Region_Clean"]
 
-stage_priority = {"Completed": 4, "Delivered, Docs Pending": 3, "Ongoing Delivery": 2, "Successful Rebid": 1}
+stage_priority = {
+    "Completed (Verified)": 4,
+    "Delivered, Pending DR/IAR": 3,
+    "Ongoing Delivery": 2,
+    "Successful Rebid": 1,
+}
 filtered["Stage_Rank"] = filtered["Delivery_Stage"].map(stage_priority).fillna(0)
 rec_stage = (
     filtered.sort_values("Stage_Rank")
@@ -780,7 +776,6 @@ rec_stage = (
 )
 rec_stage["Region_Clean"] = rec_stage.set_index(["Fund_Clean", "Recipient_Key"]).index.map(assigned_region_map)
 
-# Count actual unique Division Offices (SDOs) present in the data
 div_eval_df = df.copy()
 if not st.session_state["include_ro_in_div"]:
     div_eval_df = div_eval_df[div_eval_df["Is_SDO"]].copy()
@@ -814,8 +809,8 @@ div_rows = []
 for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
     reg_d = grp["Region_Clean"].mode().iloc[0] if not grp["Region_Clean"].mode().empty else grp["Region_Clean"].iloc[0]
     tot_d = len(grp)
-    comp_d = int((grp["Delivery_Stage"] == "Completed").sum())
-    pend_d = int((grp["Delivery_Stage"] == "Delivered, Docs Pending").sum())
+    comp_d = int((grp["Delivery_Stage"] == "Completed (Verified)").sum())
+    pend_d = int((grp["Delivery_Stage"] == "Delivered, Pending DR/IAR").sum())
     ong_d = int((grp["Delivery_Stage"] == "Ongoing Delivery").sum())
     reb_d = int((grp["Delivery_Stage"] == "Successful Rebid").sum())
 
@@ -827,9 +822,9 @@ for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
     comp_rate = (comp_d / tot_d * 100) if tot_d > 0 else 0.0
 
     if tot_d > 0 and comp_d == tot_d and pend_d == 0:
-        pay_status = "✅ ELIGIBLE FOR BILLING"
+        pay_status = "✅ ELIGIBLE"
     else:
-        pay_status = "❌ NOT ELIGIBLE (INCOMPLETE DOCS / DELIVERY)"
+        pay_status = "❌ NOT ELIGIBLE"
 
     div_rows.append({
         "Region": reg_d,
@@ -838,8 +833,8 @@ for div_name, grp in div_rec_unique.groupby("Division_Clean", sort=False):
         "Remaining Packages": int(rem_by_div.get(div_name, 0)),
         "Ongoing Delivery": ong_d,
         "Successful Rebid": reb_d,
-        "Delivered, Docs Pending": pend_d,
-        "Completed (Docs Verified)": comp_d,
+        "Delivered, Pending DR/IAR": pend_d,
+        "Completed (Verified)": comp_d,
         "With DR Date": dr_cnt,
         "With IAR Date": iar_cnt,
         "With IAR Docs": docs_cnt,
@@ -856,30 +851,29 @@ if not div_df.empty:
         ascending=[False, False, True, True],
     ).drop(columns=["_reg_ord"])
 
-divs_ready_cnt = int((div_df["Billing Eligibility"] == "✅ ELIGIBLE FOR BILLING").sum()) if not div_df.empty else 0
+divs_ready_cnt = int((div_df["Billing Eligibility"] == "✅ ELIGIBLE").sum()) if not div_df.empty else 0
 divs_total_cnt = len(div_df)
 
 total_recipients = len(unique_rec)
 total_rem_pkgs = int(compute_remaining_packages(filtered, ["Fund_Clean"]).sum())
 cnt_ongoing = int((rec_stage["Delivery_Stage"] == "Ongoing Delivery").sum())
 cnt_rebid = int((rec_stage["Delivery_Stage"] == "Successful Rebid").sum())
-cnt_pending_docs = int((rec_stage["Delivery_Stage"] == "Delivered, Docs Pending").sum())
-cnt_completed = int((rec_stage["Delivery_Stage"] == "Completed").sum())
+cnt_pending_docs = int((rec_stage["Delivery_Stage"] == "Delivered, Pending DR/IAR").sum())
+cnt_completed = int((rec_stage["Delivery_Stage"] == "Completed (Verified)").sum())
 cnt_delivered_total = cnt_completed + cnt_pending_docs
 
 pct_delivered = (cnt_delivered_total / total_recipients * 100) if total_recipients > 0 else 0.0
 pct_completed = (cnt_completed / total_recipients * 100) if total_recipients > 0 else 0.0
 pct_ongoing = (cnt_ongoing / total_recipients * 100) if total_recipients > 0 else 0.0
 
-# 7 Clean KPI Cards in 1 Row
 cols = st.columns(7)
 kpi_specs = [
     ("Total Recipients", f"{total_recipients:,}", "100%", "#eff6ff", "#1d4ed8", "Unique schools/offices"),
     ("Remaining Pkgs", f"{total_rem_pkgs:,}", "Pending", "#f0f9ff", "#0284c7", "Undelivered packages"),
     ("Ongoing Delivery", f"{cnt_ongoing:,}", f"{pct_ongoing:.1f}%", "#eff6ff", "#2563eb", "Awarded / in transit"),
     ("Successful Rebid", f"{cnt_rebid:,}", "Rebid", "#f5f3ff", "#7c3aed", "Rebid allocation"),
-    ("Docs Pending", f"{cnt_pending_docs:,}", f"{pct_delivered:.1f}% Deliv.", "#fff7ed", "#ea580c", "Delivered, incomplete docs"),
-    ("Fully Completed", f"{cnt_completed:,}", f"{pct_completed:.1f}%", "#ecfdf5", "#059669", "Delivery + Docs verified"),
+    ("Pending DR / IAR", f"{cnt_pending_docs:,}", f"{pct_delivered:.1f}% Deliv.", "#fff7ed", "#ea580c", "Delivered, no DR/IAR yet"),
+    ("Completed (Verified)", f"{cnt_completed:,}", f"{pct_completed:.1f}%", "#ecfdf5", "#059669", "With IAR Date & Docs"),
     ("Divisions Billable", f"{divs_ready_cnt:,} / {divs_total_cnt:,}", "100% Docs", "#dcfce7", "#15803d", "SDOs eligible for billing"),
 ]
 
@@ -914,8 +908,8 @@ reg_rows = []
 for reg in regions_present:
     r_sub = rec_stage[rec_stage["Region_Clean"] == reg]
     tot_r = int((unique_rec["Region_Clean"] == reg).sum())
-    comp_r = int((r_sub["Delivery_Stage"] == "Completed").sum())
-    pend_r = int((r_sub["Delivery_Stage"] == "Delivered, Docs Pending").sum())
+    comp_r = int((r_sub["Delivery_Stage"] == "Completed (Verified)").sum())
+    pend_r = int((r_sub["Delivery_Stage"] == "Delivered, Pending DR/IAR").sum())
     deliv_rate = ((comp_r + pend_r) / tot_r * 100) if tot_r > 0 else 0.0
     comp_rate = (comp_r / tot_r * 100) if tot_r > 0 else 0.0
 
@@ -925,8 +919,8 @@ for reg in regions_present:
         "Remaining Packages": int(rem_by_reg.get(reg, 0)),
         "Ongoing Delivery": int((r_sub["Delivery_Stage"] == "Ongoing Delivery").sum()),
         "Successful Rebid": int((r_sub["Delivery_Stage"] == "Successful Rebid").sum()),
-        "Delivered, Docs Pending": pend_r,
-        "Completed": comp_r,
+        "Delivered, Pending DR/IAR": pend_r,
+        "Completed (Verified)": comp_r,
         "Delivery Rate (%)": round(deliv_rate, 1),
         "Completion Rate (%)": round(comp_rate, 1),
     })
@@ -938,8 +932,8 @@ reg_total = pd.DataFrame([{
     "Remaining Packages": reg_df["Remaining Packages"].sum(),
     "Ongoing Delivery": reg_df["Ongoing Delivery"].sum(),
     "Successful Rebid": reg_df["Successful Rebid"].sum(),
-    "Delivered, Docs Pending": reg_df["Delivered, Docs Pending"].sum(),
-    "Completed": reg_df["Completed"].sum(),
+    "Delivered, Pending DR/IAR": reg_df["Delivered, Pending DR/IAR"].sum(),
+    "Completed (Verified)": reg_df["Completed (Verified)"].sum(),
     "Delivery Rate (%)": round(pct_delivered, 1),
     "Completion Rate (%)": round(pct_completed, 1),
 }])
@@ -949,18 +943,18 @@ if not div_df.empty:
     tot_r_div = div_df["Total Recipients"].sum()
     div_total = pd.DataFrame([{
         "Region": "TOTAL",
-        "Division (SDO)": f"{divs_ready_cnt} of {divs_total_cnt} Divisions Eligible",
+        "Division (SDO)": f"{divs_ready_cnt} of {divs_total_cnt} Eligible",
         "Total Recipients": tot_r_div,
         "Remaining Packages": div_df["Remaining Packages"].sum(),
         "Ongoing Delivery": div_df["Ongoing Delivery"].sum(),
         "Successful Rebid": div_df["Successful Rebid"].sum(),
-        "Delivered, Docs Pending": div_df["Delivered, Docs Pending"].sum(),
-        "Completed (Docs Verified)": div_df["Completed (Docs Verified)"].sum(),
+        "Delivered, Pending DR/IAR": div_df["Delivered, Pending DR/IAR"].sum(),
+        "Completed (Verified)": div_df["Completed (Verified)"].sum(),
         "With DR Date": div_df["With DR Date"].sum(),
         "With IAR Date": div_df["With IAR Date"].sum(),
         "With IAR Docs": div_df["With IAR Docs"].sum(),
-        "Delivery Rate (%)": round((div_df["Completed (Docs Verified)"].sum() + div_df["Delivered, Docs Pending"].sum()) / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
-        "Completion Rate (%)": round(div_df["Completed (Docs Verified)"].sum() / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
+        "Delivery Rate (%)": round((div_df["Completed (Verified)"].sum() + div_df["Delivered, Pending DR/IAR"].sum()) / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
+        "Completion Rate (%)": round(div_df["Completed (Verified)"].sum() / tot_r_div * 100, 1) if tot_r_div > 0 else 0.0,
         "Billing Eligibility": f"{divs_ready_cnt} ELIGIBLE",
     }])
     div_display = pd.concat([div_df, div_total], ignore_index=True)
@@ -1048,7 +1042,7 @@ with tab1:
         st.markdown('<div class="section-header">📍 Regional Delivery Volume by Stage</div>', unsafe_allow_html=True)
         chart_melt = reg_df.melt(
             id_vars="Region",
-            value_vars=["Completed", "Delivered, Docs Pending", "Ongoing Delivery", "Successful Rebid"],
+            value_vars=["Completed (Verified)", "Delivered, Pending DR/IAR", "Ongoing Delivery", "Successful Rebid"],
             var_name="Stage",
             value_name="Recipients",
         )
@@ -1086,7 +1080,7 @@ with tab1:
     with c_right:
         st.markdown('<div class="section-header">🍩 Overall Delivery Status Share</div>', unsafe_allow_html=True)
         pie_df = pd.DataFrame({
-            "Stage": ["Completed", "Delivered, Docs Pending", "Ongoing Delivery", "Successful Rebid"],
+            "Stage": ["Completed (Verified)", "Delivered, Pending DR/IAR", "Ongoing Delivery", "Successful Rebid"],
             "Count": [cnt_completed, cnt_pending_docs, cnt_ongoing, cnt_rebid],
         })
         pie_df = pie_df[pie_df["Count"] > 0]
@@ -1152,7 +1146,7 @@ with tab1:
             paper_bgcolor="rgba(0,0,0,0)",
             coloraxis_showscale=False,
             margin=dict(l=10, r=20, t=10, b=10),
-            xaxis=dict(title="Delivered + Completed (%)", gridcolor="#e2e8f0"),
+            xaxis=dict(title="Delivered + Verified (%)", gridcolor="#e2e8f0"),
         )
         st.plotly_chart(fig_rate, use_container_width=True)
 
@@ -1182,27 +1176,29 @@ with tab2:
     st.markdown('<div class="section-header">💰 Schools Division (SDO) Billing Eligibility</div>', unsafe_allow_html=True)
     st.caption(
         f"Aktuwal na bilang mula sa dataset: **{divs_total_cnt:,} unique Division Offices** "
-        f"({divs_ready_cnt:,} eligible for billing). Hindi eligible ang Division kung may kahit 1 recipient pa na kulang ang delivery, IAR Date, o IAR Docs."
+        f"({divs_ready_cnt:,} eligible for billing). Ang mga naka-tag na 'Completed' pero wala pang DR/IAR ay naka-marka bilang **Delivered, Pending DR/IAR**."
     )
 
-    opt_c1, opt_c2, opt_c3 = st.columns([1.6, 1.3, 1.1])
+    opt_c1, opt_c2, opt_c3 = st.columns([1.3, 1.4, 1.3])
     with opt_c1:
         pay_filter = st.radio(
             "Filter Billing Status",
-            ["All", "✅ ELIGIBLE FOR BILLING", "❌ NOT ELIGIBLE (INCOMPLETE DOCS / DELIVERY)"],
+            ["All", "✅ ELIGIBLE", "❌ NOT ELIGIBLE"],
             horizontal=True,
         )
     with opt_c2:
+        st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
         st.checkbox(
-            "Strict Docs Mode (Require BOTH IAR Date & IAR Docs)",
+            "Strict Docs Mode (IAR Date + IAR Docs)",
             key="strict_docs_mode",
-            help="Kapag naka-check, kailangang may laman ang parehong IAR Date (Col L) at IAR Docs (Col M) para mabilang na Completed.",
+            help="Kapag naka-check, kailangang may laman ang parehong IAR Date (Col L) at IAR Docs (Col M) para mabilang na Completed (Verified).",
         )
     with opt_c3:
+        st.markdown("<div style='height: 1.55rem;'></div>", unsafe_allow_html=True)
         st.checkbox(
-            "Include Regional / Central Offices",
+            "Include Regional Offices (RO)",
             key="include_ro_in_div",
-            help="Naka-uncheck by default para pure Schools Division Offices lang ang bilangin.",
+            help="Naka-uncheck by default para pure Schools Division Offices (SDO) lang ang bilangin.",
         )
 
     div_view = div_display.copy()
@@ -1216,8 +1212,8 @@ with tab2:
                 "Remaining Packages": "{:,.0f}",
                 "Ongoing Delivery": "{:,.0f}",
                 "Successful Rebid": "{:,.0f}",
-                "Delivered, Docs Pending": "{:,.0f}",
-                "Completed (Docs Verified)": "{:,.0f}",
+                "Delivered, Pending DR/IAR": "{:,.0f}",
+                "Completed (Verified)": "{:,.0f}",
                 "With DR Date": "{:,.0f}",
                 "With IAR Date": "{:,.0f}",
                 "With IAR Docs": "{:,.0f}",
@@ -1227,6 +1223,22 @@ with tab2:
             use_container_width=True,
             hide_index=True,
             height=620,
+            column_config={
+                "Region": st.column_config.TextColumn("Region", pinned=True, width="small"),
+                "Division (SDO)": st.column_config.TextColumn("Division (SDO)", pinned=True, width="medium"),
+                "Total Recipients": st.column_config.NumberColumn("Recipients", width="small"),
+                "Remaining Packages": st.column_config.NumberColumn("Rem. Pkgs", width="small"),
+                "Ongoing Delivery": st.column_config.NumberColumn("Ongoing", width="small"),
+                "Successful Rebid": st.column_config.NumberColumn("Rebid", width="small"),
+                "Delivered, Pending DR/IAR": st.column_config.NumberColumn("Pending DR/IAR", width="small"),
+                "Completed (Verified)": st.column_config.NumberColumn("Completed", width="small"),
+                "With DR Date": st.column_config.NumberColumn("DR Date", width="small"),
+                "With IAR Date": st.column_config.NumberColumn("IAR Date", width="small"),
+                "With IAR Docs": st.column_config.NumberColumn("IAR Docs", width="small"),
+                "Delivery Rate (%)": st.column_config.NumberColumn("Deliv. %", width="small"),
+                "Completion Rate (%)": st.column_config.NumberColumn("Comp. %", width="small"),
+                "Billing Eligibility": st.column_config.TextColumn("Billing Status", width="medium"),
+            },
         )
     else:
         st.info("No divisions match the selected billing status filter.")
@@ -1239,8 +1251,8 @@ with tab3:
             "Remaining Packages": "{:,.0f}",
             "Ongoing Delivery": "{:,.0f}",
             "Successful Rebid": "{:,.0f}",
-            "Delivered, Docs Pending": "{:,.0f}",
-            "Completed": "{:,.0f}",
+            "Delivered, Pending DR/IAR": "{:,.0f}",
+            "Completed (Verified)": "{:,.0f}",
             "Delivery Rate (%)": "{:.1f}%",
             "Completion Rate (%)": "{:.1f}%",
         }),
@@ -1278,7 +1290,7 @@ with tab4:
 with tab5:
     st.markdown('<div class="section-header">🔎 School / Division Lookup & IAR Date / Docs Simulator</div>', unsafe_allow_html=True)
     st.caption(
-        "Mag-type ng petsa sa **DR Date** / **IAR Date** at ilagay ang **IAR Docs** (hal. `Complete`) para i-test kung magiging **✅ ELIGIBLE FOR BILLING** na ang buong Division."
+        "Mag-type ng petsa sa **DR Date** / **IAR Date** at ilagay ang **IAR Docs** (hal. `Complete`) para i-test kung magiging **✅ ELIGIBLE** na ang buong Division."
     )
 
     s_left, s_right = st.columns([3, 1])
@@ -1326,7 +1338,7 @@ with tab5:
             "IAR Docs": st.column_config.TextColumn("IAR Docs (Editable)"),
             "Status": st.column_config.SelectboxColumn(
                 "Status (Editable)",
-                options=["Completed", "Delivered, Docs Pending", "Ongoing Delivery", "Successful Rebid"],
+                options=["Completed (Verified)", "Delivered, Pending DR/IAR", "Ongoing Delivery", "Successful Rebid"],
                 required=True,
             ),
         },
