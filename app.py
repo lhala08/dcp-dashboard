@@ -188,8 +188,8 @@ def get_secret(key: str, default: str = "") -> str:
         return default
 
 
-SHEET_ID = get_secret("1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g", "")
-APP_PASSWORD = get_secret("!dcp2026*", "")
+SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
+APP_PASSWORD = "!dcp2026!*"
 
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
