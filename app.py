@@ -154,8 +154,7 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-SHEET_ID = "17deZpiZgrTQJ9nEBRjFKh6VqHk_hYVs4B7cEaPtcqrw"
+SHEET_ID = "1uGsxNYJHhL0DOfODQbn60L2wXnC2qd-lKO56O8OzF4g"
 
 REGION_ORDER = {
     "1": 1, "2": 2, "3": 3, "4A": 4, "4B": 5, "MIMAROPA": 6,
